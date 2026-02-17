@@ -96,7 +96,7 @@ class EventStore:
             ),
         )
         self.conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     def insert_campaign(self, campaign: dict[str, Any]) -> str:
         """Insert a campaign record. Returns campaign id."""

@@ -215,7 +215,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
         if row is None:
             self._exhausted = True
             obs = np.zeros(self._feature_dim, dtype=np.float32)
-            info = {
+            info: dict[str, Any] = {
                 "targets": np.full(N_HEADS, INACTIVE_HEAD, dtype=np.float32),
                 "ground_truth": None,
                 "event_id": self._cursor,
@@ -261,7 +261,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
 
         return obs, reward, False, False, info
 
-    def render(self) -> str | None:
+    def render(self) -> str | None:  # type: ignore[override]
         if self.render_mode != "ansi" or self._current_row is None:
             return None
         row = self._current_row

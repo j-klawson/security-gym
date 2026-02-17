@@ -1,7 +1,6 @@
 """Tests for EventStore read/write operations."""
 
 from security_gym.data.event_store import EventStore
-from security_gym.parsers.base import ParsedEvent
 from tests.conftest import SAMPLE_EVENTS
 
 

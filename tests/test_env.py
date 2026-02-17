@@ -4,8 +4,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium.utils.env_checker import check_env
 
-import security_gym
-from security_gym.envs.log_stream_env import INACTIVE_HEAD, SecurityLogStreamEnv
+from security_gym.envs.log_stream_env import SecurityLogStreamEnv
 from security_gym.features.extractors import FEATURE_DIM
 from security_gym.targets.builder import N_HEADS
 from tests.conftest import SAMPLE_EVENTS
