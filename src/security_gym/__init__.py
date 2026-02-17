@@ -11,10 +11,12 @@ from security_gym.features.hasher import FeatureHasher
 from security_gym.parsers.base import ParsedEvent, Parser
 from security_gym.parsers.registry import ParserRegistry
 from security_gym.targets.builder import HEAD_NAMES, N_HEADS, TargetBuilder
+from security_gym.adapters.scan_stream import SecurityGymStream
 
 __all__ = [
     "EventStore",
     "SecurityLogStreamEnv",
+    "SecurityGymStream",
     "EventFeatureExtractor",
     "FeatureHasher",
     "ParsedEvent",
