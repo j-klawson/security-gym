@@ -43,6 +43,6 @@ jobs:
           pip install -e ".[dev]"
           pip install pip-audit bandit
       - name: Audit dependencies
-        run: pip-audit --strict
+        run: pip-audit --strict --skip-editable
       - name: Static security analysis
         run: bandit -r src/ -c pyproject.toml
