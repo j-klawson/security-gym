@@ -11,9 +11,10 @@ Gymnasium-compatible environment that replays labeled Linux log streams for cont
 
 ## Key Patterns
 
-- **Parsers**: decorator-based registry (`@ParserRegistry.register('auth_log')`)
+- **Parsers**: decorator-based registry (`@ParserRegistry.register('auth_log')`); five parsers: `auth_log`, `syslog`, `web_access`, `web_error`, `journal`. Shared syslog header in `_syslog_header.py`. Each parser stores `event_type` in `fields["event_type"]` for DB round-trip.
 - **EventStore**: SQLite with WAL mode, ID-based cursor for resumable reads
-- **Features**: three modes — `event` (24-dim), `hashed` (configurable), `session` (20-dim, Phase 3)
+- **Features**: three modes — `event` (24-dim), `hashed` (configurable), `session` (20-dim with subnet entropy, per-session state tracking)
+- **Wrappers**: `HashedFeatureWrapper`, `SessionAggregationWrapper`, `WindowedWrapper`, `DecayingTraceWrapper` — composable gymnasium wrappers in `envs/wrappers.py`
 - **Targets**: multi-head arrays (5 heads), compatible with Alberta MultiHeadMLPLearner. NaN used internally by TargetBuilder; info dict uses -1.0 sentinel (`INACTIVE_HEAD`) for gymnasium compatibility.
 - **Environment**: continuous stream (terminated=False always, truncated=True at end of data)
 - **Adapter**: `SecurityGymStream` reads EventStore directly (bypasses gym overhead), provides `collect_numpy()`/`collect()` for batch learning and `iter_batches()` for constant-memory streaming. JAX optional — `collect_numpy()` always works.
@@ -34,7 +35,7 @@ python -m build                   # Build wheel
 
 - **Phase 1 (Foundation)**: COMPLETE — package skeleton, data layer, auth_log parser, event/hashed feature extractors, target builder, SecurityLogStreamEnv, 58 tests passing, `gymnasium.utils.check_env` passes
 - **Phase 2 (Alberta Integration)**: COMPLETE — `SecurityGymStream` adapter (`adapters/scan_stream.py`), GitHub Actions CI (test + lint + security), 86 tests passing
-- **Phase 3 (Parsers + Wrappers)**: TODO — syslog, web_access, web_error, journal parsers; session features; HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper
+- **Phase 3 (Parsers + Wrappers)**: COMPLETE — syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim); HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper, DecayingTraceWrapper; enriched env info dict (event_type, src_ip, username); 172 tests passing
 - **Phase 4 (Attack Scripts)**: TODO — run_campaign orchestrator, individual attack scripts, collect_logs daemon
 - **Phase 5 (Data Collection)**: TODO — deploy Debian server, run campaigns, publish dataset
 

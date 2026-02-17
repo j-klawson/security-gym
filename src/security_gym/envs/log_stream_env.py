@@ -203,6 +203,9 @@ class SecurityLogStreamEnv(gymnasium.Env):
             "raw_line": row["raw_line"],
             "session_id": row.get("session_id"),
             "campaign_id": row.get("campaign_id"),
+            "event_type": event.event_type,
+            "src_ip": event.src_ip,
+            "username": event.username,
         }
 
         return obs, info
@@ -225,6 +228,9 @@ class SecurityLogStreamEnv(gymnasium.Env):
                 "raw_line": "",
                 "session_id": None,
                 "campaign_id": None,
+                "event_type": "",
+                "src_ip": None,
+                "username": None,
             }
             return obs, 0.0, False, True, info
 
@@ -257,6 +263,9 @@ class SecurityLogStreamEnv(gymnasium.Env):
             "raw_line": row["raw_line"],
             "session_id": row.get("session_id"),
             "campaign_id": row.get("campaign_id"),
+            "event_type": event.event_type,
+            "src_ip": event.src_ip,
+            "username": event.username,
         }
 
         return obs, reward, False, False, info

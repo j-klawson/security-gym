@@ -10,25 +10,9 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
+from security_gym.parsers._syslog_header import SYSLOG_PATTERN, parse_syslog_timestamp
 from security_gym.parsers.base import ParsedEvent, Parser
 from security_gym.parsers.registry import ParserRegistry
-
-# Syslog header: "Mon DD HH:MM:SS hostname service[PID]: message"
-SYSLOG_PATTERN = re.compile(
-    r"^(?P<month>\w{3})\s+"
-    r"(?P<day>\d{1,2})\s+"
-    r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
-    r"(?P<hostname>\S+)\s+"
-    r"(?P<service>\w+)"
-    r"(?:\[(?P<pid>\d+)\])?\s*:\s*"
-    r"(?P<message>.*)$"
-)
-
-MONTH_MAP = {
-    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
-    "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
-    "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
-}
 
 # SSHD message patterns
 PATTERNS = {
@@ -145,11 +129,4 @@ class AuthLogParser(Parser):
         return None
 
     def _parse_timestamp(self, month: str, day: int, time_str: str) -> datetime:
-        month_num = MONTH_MAP.get(month, 1)
-        hour, minute, second = map(int, time_str.split(":"))
-        year = self.year
-        ts = datetime(year, month_num, day, hour, minute, second, tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        if ts > now:
-            ts = ts.replace(year=year - 1)
-        return ts
+        return parse_syslog_timestamp(month, day, time_str, self.year)
