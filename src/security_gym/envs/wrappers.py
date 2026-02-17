@@ -56,7 +56,7 @@ class HashedFeatureWrapper(gymnasium.Wrapper):
         hashed = self._hasher.hash(raw_line) if raw_line else np.zeros(
             self._hash_dim, dtype=np.float32,
         )
-        return hashed, reward, terminated, truncated, info
+        return hashed, float(reward), terminated, truncated, info
 
 
 class SessionAggregationWrapper(gymnasium.Wrapper):
@@ -112,10 +112,11 @@ class SessionAggregationWrapper(gymnasium.Wrapper):
         self, action: int,
     ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
+        r = float(reward)
         if truncated and not info.get("raw_line"):
-            return np.zeros(SESSION_FEATURE_DIM, dtype=np.float32), reward, terminated, truncated, info
+            return np.zeros(SESSION_FEATURE_DIM, dtype=np.float32), r, terminated, truncated, info
         event = self._info_to_event(info)
-        return self._extractor.extract(event), reward, terminated, truncated, info
+        return self._extractor.extract(event), r, terminated, truncated, info
 
 
 class WindowedWrapper(gymnasium.Wrapper):
@@ -130,6 +131,7 @@ class WindowedWrapper(gymnasium.Wrapper):
     def __init__(self, env: gymnasium.Env, window_size: int = 10):
         super().__init__(env)
         self._window_size = window_size
+        assert env.observation_space.shape is not None
         inner_dim = int(np.prod(env.observation_space.shape))
         self._inner_dim = inner_dim
         self._buffer: deque[np.ndarray] = deque(maxlen=window_size)
@@ -159,7 +161,7 @@ class WindowedWrapper(gymnasium.Wrapper):
     ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._buffer.append(obs.flatten())
-        return self._get_windowed_obs(), reward, terminated, truncated, info
+        return self._get_windowed_obs(), float(reward), terminated, truncated, info
 
 
 class DecayingTraceWrapper(gymnasium.Wrapper):
@@ -178,6 +180,7 @@ class DecayingTraceWrapper(gymnasium.Wrapper):
         super().__init__(env)
         self._lambda = lambda_
         self._dt_key = dt_key
+        assert env.observation_space.shape is not None
         inner_dim = int(np.prod(env.observation_space.shape))
         self._trace = np.zeros(inner_dim, dtype=np.float32)
 
@@ -196,4 +199,4 @@ class DecayingTraceWrapper(gymnasium.Wrapper):
         dt = info.get(self._dt_key, 0.0)
         decay = self._lambda ** dt
         self._trace = self._trace * decay + obs.flatten()
-        return self._trace.copy(), reward, terminated, truncated, info
+        return self._trace.copy(), float(reward), terminated, truncated, info
