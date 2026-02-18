@@ -6,6 +6,7 @@ Gymnasium-compatible environment that replays labeled Linux log streams for cont
 
 - `src/security_gym/` — installable package (`pip install -e .`)
 - `attacks/` — attack scripts for data generation (NOT pip-installed)
+- `server/` — target VM provisioning docs and Docker Compose for vulnerable services
 - `data/` — runtime data directory (gitignored)
 - `tests/` — pytest test suite
 
@@ -37,7 +38,15 @@ python -m build                   # Build wheel
 - **Phase 2 (Alberta Integration)**: COMPLETE — `SecurityGymStream` adapter (`adapters/scan_stream.py`), GitHub Actions CI (test + lint + security), 86 tests passing
 - **Phase 3 (Parsers + Wrappers)**: COMPLETE — syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim); HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper, DecayingTraceWrapper; enriched env info dict (event_type, src_ip, username); 172 tests passing
 - **Phase 4 (Attack Scripts)**: TODO — run_campaign orchestrator, individual attack scripts, collect_logs daemon
-- **Phase 5 (Data Collection)**: TODO — deploy Debian server, run campaigns, publish dataset
+- **Phase 5 (Data Collection)**: IN PROGRESS — Isildur VM provisioned (Debian 11 on Frodo hypervisor), Log4Shell + Nginx containers running, auditd ground truth labeling configured. Remaining: run campaigns, publish dataset
+
+## Server Infrastructure (Isildur)
+
+- **Host:** Debian 11.11 VM (192.168.2.201) on Frodo hypervisor, frozen (APT disabled, packages held)
+- **Services:** Log4Shell (CVE-2021-44228) on :8080, Nginx 1.21.0 on :80, SSH on :22
+- **Log sources:** auth.log, syslog, nginx access/error logs, journalctl, Docker JSON logs
+- **Ground truth:** auditd rules track wget/curl/sh/bash execution with `research_exploit` key
+- **Snapshot:** `ISILDUR_READY_V1` golden state on Frodo
 
 ## Sibling Projects
 
