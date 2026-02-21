@@ -27,7 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 alberta = ["alberta-framework>=0.8.0", "jax>=0.4.20", "jaxlib>=0.4.20"]
 collection = ["watchdog>=3.0.0"]
-attacks = ["paramiko>=3.0.0", "requests>=2.28.0"]
+attacks = ["paramiko>=3.0.0", "requests>=2.28.0", "pyyaml>=6.0", "scapy>=2.5.0"]
 dev = ["pytest>=7.0", "ruff>=0.4.0"]
 all = ["security-gym[alberta,collection,attacks,dev]"]
 
@@ -48,6 +48,19 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py311"
 line-length = 99
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["security_gym.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["scapy.*"]
+ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests"]

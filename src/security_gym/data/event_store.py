@@ -117,7 +117,7 @@ class EventStore:
             ),
         )
         self.conn.commit()
-        return campaign["id"]
+        return str(campaign["id"])
 
     def bulk_insert(self, events: list[ParsedEvent], ground_truths: list[dict] | None = None) -> int:
         """Insert multiple events in a single transaction. Returns count inserted."""
@@ -177,7 +177,7 @@ class EventStore:
 
     def count_events(self) -> int:
         cursor = self.conn.execute("SELECT COUNT(*) FROM events")
-        return cursor.fetchone()[0]
+        return int(cursor.fetchone()[0])
 
     def get_time_range(self) -> tuple[str, str] | None:
         """Return (min_timestamp, max_timestamp) or None if empty."""

@@ -88,7 +88,7 @@ class SecurityGymStream:
     def __len__(self) -> int:
         """Total number of events in the store."""
         with EventStore(self.db_path, mode="r") as store:
-            return store.count_events()
+            return int(store.count_events())
 
     def remaining(self) -> int:
         """Number of events with id > start_id."""
@@ -104,7 +104,7 @@ class SecurityGymStream:
                     "SELECT COUNT(*) FROM events WHERE id > ?",
                     (self.start_id,),
                 )
-            return cursor.fetchone()[0]
+            return int(cursor.fetchone()[0])
 
     # ── Internal pipeline ──────────────────────────────────────────────
 

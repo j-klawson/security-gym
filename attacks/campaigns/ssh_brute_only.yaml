@@ -1,0 +1,42 @@
+campaign:
+  name: "SSH Brute Force Only"
+  description: "Minimal single-phase campaign for testing"
+  seed: 42
+
+  target:
+    host: "192.168.2.201"
+    ssh_user: "researcher"
+    ssh_key: "~/.ssh/isildur_research"
+
+  phases:
+    - name: "SSH Brute Force"
+      module: "ssh_brute_force"
+      mitre_technique: "T1110.001"
+      mitre_tactic: "TA0006"
+      attack_type: "brute_force"
+      attack_stage: "initial_access"
+      severity: 2
+      params:
+        usernames: ["root", "admin"]
+        passwords: ["password", "123456", "admin"]
+        max_attempts_per_ip: 3
+        target_port: 22
+      ip_source:
+        strategy: "aliased"
+        count: 10
+        subnet: "192.168.2.0/24"
+        start_offset: 100
+        interface: "en0"
+      timing:
+        duration_seconds: 120
+        profile: "constant"
+        jitter_ms: [500, 2000]
+
+  collection:
+    log_sources:
+      - name: "auth_log"
+        remote_path: "/var/log/auth.log"
+        parser: "auth_log"
+    output:
+      db_path: "data/campaigns.db"
+      time_buffer_seconds: 30

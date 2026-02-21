@@ -20,15 +20,22 @@ Gymnasium-compatible environment that replays labeled Linux log streams for cont
 - **Environment**: continuous stream (terminated=False always, truncated=True at end of data)
 - **Adapter**: `SecurityGymStream` reads EventStore directly (bypasses gym overhead), provides `collect_numpy()`/`collect()` for batch learning and `iter_batches()` for constant-memory streaming. JAX optional — `collect_numpy()` always works.
 - **Registration**: belt+suspenders — `__init__.py` calls `register_envs()` on import AND `pyproject.toml` entry point for auto-discovery
+- **Attack Modules**: decorator-based registry (`@AttackModuleRegistry.register('ssh_brute_force')`); three modules: `recon` (scapy SYN scan), `ssh_brute_force` (paramiko), `log4shell` (requests + JNDI injection). Non-stationary `TimingProfile` with constant/accelerating/decelerating/custom profiles.
+- **Campaign Framework**: YAML-driven orchestrator — load config → execute phases → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules`.
 - **CI**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main
 
 ## Commands
 
 ```bash
 pip install -e ".[dev]"          # Install with dev deps
+pip install -e ".[attacks]"      # Install with attack deps
 pytest tests/                     # Run all tests
+pytest attacks/tests/             # Run attack framework tests
 pytest tests/test_env.py -v       # Run env tests only
-ruff check src/ tests/            # Lint
+ruff check src/ tests/ attacks/   # Lint
+python -m attacks validate campaigns/ssh_brute_only.yaml  # Validate campaign
+python -m attacks run campaigns/ssh_brute_only.yaml --dry-run  # Preview campaign
+python -m attacks list-modules    # Show available attack modules
 python -m build                   # Build wheel
 ```
 
@@ -37,7 +44,7 @@ python -m build                   # Build wheel
 - **Phase 1 (Foundation)**: COMPLETE — package skeleton, data layer, auth_log parser, event/hashed feature extractors, target builder, SecurityLogStreamEnv, 58 tests passing, `gymnasium.utils.check_env` passes
 - **Phase 2 (Alberta Integration)**: COMPLETE — `SecurityGymStream` adapter (`adapters/scan_stream.py`), GitHub Actions CI (test + lint + security), 86 tests passing
 - **Phase 3 (Parsers + Wrappers)**: COMPLETE — syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim); HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper, DecayingTraceWrapper; enriched env info dict (event_type, src_ip, username); 172 tests passing
-- **Phase 4 (Attack Scripts)**: TODO — run_campaign orchestrator, individual attack scripts, collect_logs daemon
+- **Phase 4 (Attack Scripts)**: COMPLETE — YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`), 49 tests passing
 - **Phase 5 (Data Collection)**: IN PROGRESS — Isildur VM provisioned (Debian 11 on Frodo hypervisor), Log4Shell + Nginx containers running, auditd ground truth labeling configured. Remaining: run campaigns, publish dataset
 
 ## Server Infrastructure (Isildur)
