@@ -1,0 +1,56 @@
+# security-gym Roadmap
+
+Phased development plan for the security-gym Gymnasium environment.
+
+## Phase 1 — Foundation ✅
+
+Package skeleton, data layer, auth_log parser, event/hashed feature extractors, target builder, SecurityLogStreamEnv. 58 tests passing, `gymnasium.utils.check_env` passes.
+
+## Phase 2 — Alberta Integration ✅
+
+`SecurityGymStream` adapter (`adapters/scan_stream.py`), GitHub Actions CI (test + lint + security). 86 tests passing.
+
+## Phase 3 — Parsers + Wrappers ✅
+
+syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim); HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper, DecayingTraceWrapper; enriched env info dict (event_type, src_ip, username). 172 tests passing.
+
+## Phase 4 — Attack Scripts ✅
+
+YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`). 49 tests passing.
+
+## Phase 5 — Data Collection 🔄
+
+Generate labeled attack datasets by running campaigns against the Isildur VM.
+
+**Completed:**
+- Isildur VM fully configured (researcher user, SSH key auth, NOPASSWD sudo for ausearch)
+- PasswordAuthentication enabled for brute force module
+- Docker stack deployed (Log4Shell on :8080, Nginx reverse proxy on :80)
+- All log sources verified readable
+
+**Remaining:**
+- Run SSH brute force campaign
+- Run Log4Shell campaign
+- Run recon (port scan) campaign
+- Collect and label logs via SSH/SFTP
+- Validate labeled data in EventStore
+- Publish dataset
+
+## Phase 6 — Experiments (Future)
+
+Connect security-gym to alberta-framework and run continual learning experiments.
+
+- Feed SecurityGymStream into MultiHeadMLPLearner
+- Compare IDBD / Autostep / LMS optimizers on security log data
+- Evaluate session vs. event vs. hashed feature representations
+- Benchmark against chronos-sec honeypot results
+- Non-stationarity analysis (concept drift across campaign phases)
+
+## Phase 7 — Analysis & Publication (Future)
+
+Results analysis, dataset release, and dissertation integration.
+
+- Statistical analysis of learning curves across optimizers
+- Publication-quality figures via alberta-framework analysis tools
+- Public dataset release (anonymized log streams with ground-truth labels)
+- Dissertation chapter: security-gym as an Alberta Plan Step 6/8 domain

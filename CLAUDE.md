@@ -2,6 +2,8 @@
 
 Gymnasium-compatible environment that replays labeled Linux log streams for continual learning research.
 
+See `ROADMAP.md` for project phases and `TODO.md` for current action items.
+
 ## Architecture
 
 - `src/security_gym/` — installable package (`pip install -e .`)
@@ -38,14 +40,6 @@ python -m attacks run campaigns/ssh_brute_only.yaml --dry-run  # Preview campaig
 python -m attacks list-modules    # Show available attack modules
 python -m build                   # Build wheel
 ```
-
-## Implementation Status
-
-- **Phase 1 (Foundation)**: COMPLETE — package skeleton, data layer, auth_log parser, event/hashed feature extractors, target builder, SecurityLogStreamEnv, 58 tests passing, `gymnasium.utils.check_env` passes
-- **Phase 2 (Alberta Integration)**: COMPLETE — `SecurityGymStream` adapter (`adapters/scan_stream.py`), GitHub Actions CI (test + lint + security), 86 tests passing
-- **Phase 3 (Parsers + Wrappers)**: COMPLETE — syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim); HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper, DecayingTraceWrapper; enriched env info dict (event_type, src_ip, username); 172 tests passing
-- **Phase 4 (Attack Scripts)**: COMPLETE — YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`), 49 tests passing
-- **Phase 5 (Data Collection)**: IN PROGRESS — Isildur VM fully configured: researcher user (adm + systemd-journal groups, SSH key auth, NOPASSWD sudo for ausearch), PasswordAuthentication enabled for brute force module, Docker stack deployed (Log4Shell on :8080, Nginx reverse proxy on :80), all log sources verified readable. Remaining: run campaigns, publish dataset
 
 ## Server Infrastructure (Isildur)
 
