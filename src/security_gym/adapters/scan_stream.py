@@ -96,7 +96,7 @@ class SecurityGymStream:
             if self.sources:
                 placeholders = ",".join("?" for _ in self.sources)
                 cursor = store.conn.execute(
-                    f"SELECT COUNT(*) FROM events WHERE id > ? AND source IN ({placeholders})",
+                    f"SELECT COUNT(*) FROM events WHERE id > ? AND source IN ({placeholders})",  # nosec B608
                     [self.start_id, *self.sources],
                 )
             else:

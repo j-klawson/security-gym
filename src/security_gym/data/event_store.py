@@ -165,7 +165,7 @@ class EventStore:
             cursor = self.conn.execute(
                 f"""SELECT * FROM events
                     WHERE id > ? AND source IN ({placeholders})
-                    ORDER BY id LIMIT ?""",
+                    ORDER BY id LIMIT ?""",  # nosec B608
                 [start_id, *sources, limit],
             )
         else:

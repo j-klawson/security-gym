@@ -55,8 +55,8 @@ PATTERNS = {
 # Map pattern names → event_type strings
 _EVENT_TYPE_MAP = {
     "auth_publickey": "auth_success",
-    "auth_password": "auth_success",
-    "auth_failed_password": "auth_failure",
+    "auth_password": "auth_success",  # nosec B105
+    "auth_failed_password": "auth_failure",  # nosec B105
     "invalid_user": "auth_invalid_user",
     "connection_closed_preauth": "session_close",
     "disconnected": "session_close",

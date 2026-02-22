@@ -131,7 +131,8 @@ class WindowedWrapper(gymnasium.Wrapper):
     def __init__(self, env: gymnasium.Env, window_size: int = 10):
         super().__init__(env)
         self._window_size = window_size
-        assert env.observation_space.shape is not None
+        if env.observation_space.shape is None:
+            raise ValueError("WindowedWrapper requires an observation_space with a shape")
         inner_dim = int(np.prod(env.observation_space.shape))
         self._inner_dim = inner_dim
         self._buffer: deque[np.ndarray] = deque(maxlen=window_size)
@@ -180,7 +181,8 @@ class DecayingTraceWrapper(gymnasium.Wrapper):
         super().__init__(env)
         self._lambda = lambda_
         self._dt_key = dt_key
-        assert env.observation_space.shape is not None
+        if env.observation_space.shape is None:
+            raise ValueError("DecayingTraceWrapper requires an observation_space with a shape")
         inner_dim = int(np.prod(env.observation_space.shape))
         self._trace = np.zeros(inner_dim, dtype=np.float32)
 
