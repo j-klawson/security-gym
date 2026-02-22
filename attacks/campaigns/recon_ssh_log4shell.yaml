@@ -112,7 +112,7 @@ campaign:
         remote_command: "journalctl --since '{start_time}' --until '{end_time}' -o json"
         parser: "journal"
       - name: "auditd"
-        remote_command: "ausearch -k research_exploit --start {start_time_audit} --end {end_time_audit} --interpret --format text"
+        remote_command: "sudo ausearch -k research_exploit --start {start_time_audit} --end {end_time_audit} --interpret --format text"
     output:
       db_path: "data/campaigns.db"
       time_buffer_seconds: 60

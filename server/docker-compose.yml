@@ -1,7 +1,9 @@
+version: "3"
+
 services:
   # The vulnerable application
   vulnerable-app:
-    image: christophetd/log4shell-vulnerable-app
+    image: ghcr.io/christophetd/log4shell-vulnerable-app
     container_name: log4j-target
     ports:
       - "8080:8080"

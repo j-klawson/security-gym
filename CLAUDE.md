@@ -45,14 +45,16 @@ python -m build                   # Build wheel
 - **Phase 2 (Alberta Integration)**: COMPLETE — `SecurityGymStream` adapter (`adapters/scan_stream.py`), GitHub Actions CI (test + lint + security), 86 tests passing
 - **Phase 3 (Parsers + Wrappers)**: COMPLETE — syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim); HashedFeatureWrapper, SessionAggregationWrapper, WindowedWrapper, DecayingTraceWrapper; enriched env info dict (event_type, src_ip, username); 172 tests passing
 - **Phase 4 (Attack Scripts)**: COMPLETE — YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`), 49 tests passing
-- **Phase 5 (Data Collection)**: IN PROGRESS — Isildur VM provisioned (Debian 11 on Frodo hypervisor), Log4Shell + Nginx containers running, auditd ground truth labeling configured. Remaining: run campaigns, publish dataset
+- **Phase 5 (Data Collection)**: IN PROGRESS — Isildur VM fully configured: researcher user (adm + systemd-journal groups, SSH key auth, NOPASSWD sudo for ausearch), PasswordAuthentication enabled for brute force module, Docker stack deployed (Log4Shell on :8080, Nginx reverse proxy on :80), all log sources verified readable. Remaining: run campaigns, publish dataset
 
 ## Server Infrastructure (Isildur)
 
 - **Host:** Debian 11.11 VM (192.168.2.201) on Frodo hypervisor, frozen (APT disabled, packages held)
-- **Services:** Log4Shell (CVE-2021-44228) on :8080, Nginx 1.21.0 on :80, SSH on :22
+- **Docker:** v20.10.5 with docker-compose v1.25 (requires `version: "3"` in compose files, use `docker-compose` not `docker compose`)
+- **Services:** Log4Shell (CVE-2021-44228) on :8080 (`ghcr.io/christophetd/log4shell-vulnerable-app`), Nginx 1.21.0 reverse proxy on :80, SSH on :22
+- **Users:** `researcher` (adm, systemd-journal groups) for log collection via SSH key `~/.ssh/isildur_research`; `keith` (sudo, docker groups) for administration
 - **Log sources:** auth.log, syslog, nginx access/error logs, journalctl, Docker JSON logs
-- **Ground truth:** auditd rules track wget/curl/sh/bash execution with `research_exploit` key
+- **Ground truth:** auditd rules track wget/curl/sh/bash execution with `research_exploit` key; researcher has NOPASSWD sudo for `ausearch`
 - **Snapshot:** `ISILDUR_READY_V1` golden state on Frodo
 
 ## Sibling Projects
