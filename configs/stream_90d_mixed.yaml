@@ -1,0 +1,32 @@
+# 90-day mixed stream — full experiment composition
+#
+# Produces a continuous log stream with benign server activity interspersed
+# with Poisson-scheduled attack campaigns, weighted by MITRE ATT&CK tactics.
+#
+# Usage:
+#   python -m attacks compose configs/stream_90d_mixed.yaml
+#   python -m attacks compose configs/stream_90d_mixed.yaml --dry-run
+
+stream:
+  duration: 90d
+  seed: 42
+
+  benign:
+    db: data/benign.db            # Hopper server logs — cycled to fill duration
+
+  attacks:
+    db: data/campaigns.db         # Attack event templates from Isildur campaigns
+
+    # Poisson process rate for campaign scheduling
+    campaigns_per_day: 3.0
+
+    # MITRE ATT&CK-aligned attack type weights (normalized to probabilities)
+    distribution:
+      discovery: 0.35             # TA0007 / T1046 — port scans, network recon
+      brute_force: 0.30           # TA0006 / T1110.001 — SSH credential brute force
+      web_exploit: 0.20           # TA0001 / T1190 — Log4Shell exploitation
+      credential_stuffing: 0.10   # TA0006 / T1110.004 — credential stuffing
+      execution: 0.05             # TA0002 / T1059 — command execution
+
+  output:
+    db: data/exp01_90d.db

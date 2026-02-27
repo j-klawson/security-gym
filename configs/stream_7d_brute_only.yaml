@@ -1,0 +1,24 @@
+# 7-day brute-force only — short test stream
+#
+# Single attack type, low campaign rate. Useful for quick iteration
+# and verifying the composition pipeline.
+#
+# Usage:
+#   python -m attacks compose configs/stream_7d_brute_only.yaml
+
+stream:
+  duration: 7d
+  seed: 123
+
+  benign:
+    db: data/benign.db
+
+  attacks:
+    db: data/campaigns.db
+    campaigns_per_day: 1.0
+
+    distribution:
+      brute_force: 1.0
+
+  output:
+    db: data/exp_7d_brute.db

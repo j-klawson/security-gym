@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -258,3 +260,75 @@ class TestCollectNoJAX:
         obs, tgt = stream.collect()
         assert isinstance(obs, np.ndarray)
         assert isinstance(tgt, np.ndarray)
+
+
+# ── Loop mode ─────────────────────────────────────────────────────────
+
+
+class TestLoopMode:
+    def test_loop_wraps_around(self, tmp_db):
+        """With loop=True, stream should wrap and yield more events than exist."""
+        stream = SecurityGymStream(tmp_db, loop=True)
+        count = 0
+        for row in stream._iter_rows(limit=26):  # 2x the 13 events
+            count += 1
+        assert count == 26
+
+    def test_loop_false_stops(self, tmp_db):
+        """Without loop, stream stops after all events."""
+        stream = SecurityGymStream(tmp_db, loop=False)
+        count = 0
+        for row in stream._iter_rows(limit=100):
+            count += 1
+        assert count == 13
+
+    def test_loop_collect_numpy_ignores_loop(self, tmp_db):
+        """collect_numpy always reads once (no looping)."""
+        stream = SecurityGymStream(tmp_db, loop=True)
+        obs, tgt = stream.collect_numpy()
+        assert obs.shape[0] == 13  # Not infinite
+
+    def test_loop_iter_batches(self, tmp_db):
+        """iter_batches respects loop=False."""
+        stream = SecurityGymStream(tmp_db, loop=False)
+        total = sum(obs.shape[0] for obs, _ in stream.iter_batches(size=5))
+        assert total == 13
+
+
+# ── Speed mode ────────────────────────────────────────────────────────
+
+
+class TestSpeedMode:
+    def test_speed_zero_no_sleep(self, tmp_db):
+        """Full speed (speed=0) should not call time.sleep."""
+        stream = SecurityGymStream(tmp_db, speed=0)
+        with patch("security_gym.adapters.scan_stream.time.sleep") as mock_sleep:
+            list(stream._iter_rows())
+            mock_sleep.assert_not_called()
+
+    def test_speed_realtime_sleeps(self, tmp_db):
+        """Realtime (speed=1.0) should call time.sleep with dt values."""
+        stream = SecurityGymStream(tmp_db, speed=1.0)
+        with patch("security_gym.adapters.scan_stream.time.sleep") as mock_sleep:
+            list(stream._iter_rows(limit=5))
+            # Events are 10 seconds apart in test fixtures
+            assert mock_sleep.call_count > 0
+            # Check that sleep was called with positive values
+            for call in mock_sleep.call_args_list:
+                assert call[0][0] > 0
+
+    def test_speed_10x_sleeps_less(self, tmp_db):
+        """10x speed should sleep 1/10th of realtime dt."""
+        stream = SecurityGymStream(tmp_db, speed=10.0)
+        with patch("security_gym.adapters.scan_stream.time.sleep") as mock_sleep:
+            list(stream._iter_rows(limit=3))
+            if mock_sleep.call_count > 0:
+                # Events are 10s apart → at 10x speed, sleep should be ~1s
+                for call in mock_sleep.call_args_list:
+                    assert call[0][0] <= 2.0  # 10s / 10 = 1s, some tolerance
+
+    def test_speed_does_not_affect_collect(self, tmp_db):
+        """collect_numpy should work even with speed set (no loop interference)."""
+        stream = SecurityGymStream(tmp_db, speed=0, loop=False)
+        obs, tgt = stream.collect_numpy()
+        assert obs.shape[0] == 13

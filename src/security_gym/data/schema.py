@@ -28,6 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_source ON events(source);
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_campaign ON events(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_events_malicious ON events(is_malicious);
+CREATE INDEX IF NOT EXISTS idx_events_attack_type ON events(attack_type);
 
 CREATE TABLE IF NOT EXISTS campaigns (
     id            TEXT PRIMARY KEY,
@@ -49,6 +51,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     is_malicious  INTEGER,
     campaign_id   TEXT REFERENCES campaigns(id),
     event_count   INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS composition_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (

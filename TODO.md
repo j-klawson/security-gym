@@ -22,6 +22,12 @@ Current action items for security-gym development.
 - [ ] Compare feature representations (event vs. hashed vs. session)
 - [ ] Evaluate wrapper combinations (Windowed, DecayingTrace)
 
+## Phase 7 — Streaming Server (Future)
+
+- [ ] Design network protocol for stream serving (gRPC vs WebSocket)
+- [ ] Add authentication and rate limiting
+- [ ] Support multiple concurrent consumers on a single composed stream
+
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios

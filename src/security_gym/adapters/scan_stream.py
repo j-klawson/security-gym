@@ -10,6 +10,7 @@ arrays when available, and the iterator requires JAX for TimeStep.
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -49,6 +50,9 @@ class SecurityGymStream:
         sources: Optional list of source types to filter by.
         start_id: Resume cursor — only read events with id > start_id.
         batch_size: Number of rows per SQLite fetch (internal pagination).
+        speed: Pacing multiplier for server-speed mode. 0 = full speed (no sleeping,
+            default), 1.0 = realtime, 10.0 = 10x faster than realtime.
+        loop: When True, wrap cursor to 0 on exhaustion (never-ending stream).
     """
 
     def __init__(
@@ -59,12 +63,16 @@ class SecurityGymStream:
         sources: list[str] | None = None,
         start_id: int = 0,
         batch_size: int = 5000,
+        speed: float = 0,
+        loop: bool = False,
     ):
         self.db_path = Path(db_path)
         self.feature_mode = feature_mode
         self.sources = sources
         self.start_id = start_id
         self.batch_size = batch_size
+        self.speed = speed
+        self.loop = loop
 
         if feature_mode == "event":
             self._extractor = EventFeatureExtractor()
@@ -151,11 +159,38 @@ class SecurityGymStream:
         }
         return self._target_builder.build_targets(gt)
 
-    def _iter_rows(self, limit: int | None = None) -> Iterator[dict[str, Any]]:
-        """Paginated EventStore reads. Yields dict rows."""
+    def _parse_row_timestamp(self, row: dict[str, Any]) -> datetime | None:
+        """Parse timestamp from a row dict, returning None on failure."""
+        ts_str = row.get("timestamp")
+        if not ts_str:
+            return None
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts
+        except ValueError:
+            return None
+
+    def _iter_rows(
+        self, limit: int | None = None, *, allow_loop: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        """Paginated EventStore reads. Yields dict rows.
+
+        Supports speed-based pacing (sleep between events based on timestamp
+        deltas) and loop mode (cursor wraps to 0 on exhaustion).
+
+        Args:
+            limit: Maximum number of rows to yield.
+            allow_loop: If False, ignore self.loop (used by batch methods).
+        """
+        loop = self.loop and allow_loop
+
         with EventStore(self.db_path, mode="r") as store:
             cursor = self.start_id
             count = 0
+            prev_ts: datetime | None = None
+
             while True:
                 page_limit = self.batch_size
                 if limit is not None:
@@ -167,12 +202,31 @@ class SecurityGymStream:
                     start_id=cursor, limit=page_limit, sources=self.sources,
                 )
                 if not rows:
+                    if loop and (limit is None or count < limit):
+                        # Wrap around to beginning
+                        cursor = 0
+                        prev_ts = None
+                        continue
                     break
 
                 for row in rows:
-                    yield dict(row)
+                    row_dict = dict(row)
+
+                    # Speed-based pacing
+                    if self.speed > 0:
+                        cur_ts = self._parse_row_timestamp(row_dict)
+                        if prev_ts is not None and cur_ts is not None:
+                            dt = (cur_ts - prev_ts).total_seconds()
+                            if dt > 0:
+                                time.sleep(dt / self.speed)
+                        prev_ts = cur_ts
+
+                    yield row_dict
                     cursor = row["id"]
                     count += 1
+
+                    if limit is not None and count >= limit:
+                        return
 
     # ── Batch interface ────────────────────────────────────────────────
 
@@ -190,7 +244,7 @@ class SecurityGymStream:
         obs_list: list[np.ndarray] = []
         tgt_list: list[np.ndarray] = []
 
-        for row in self._iter_rows(limit=limit):
+        for row in self._iter_rows(limit=limit, allow_loop=False):
             event = self._row_to_parsed_event(row)
             obs_list.append(self._extract_features(event, row["raw_line"]))
             tgt_list.append(self._build_targets(row))
@@ -231,7 +285,7 @@ class SecurityGymStream:
         obs_buf: list[np.ndarray] = []
         tgt_buf: list[np.ndarray] = []
 
-        for row in self._iter_rows():
+        for row in self._iter_rows(allow_loop=False):
             event = self._row_to_parsed_event(row)
             obs_buf.append(self._extract_features(event, row["raw_line"]))
             tgt_buf.append(self._build_targets(row))

@@ -12,6 +12,7 @@ from attacks.collection.import_logs import BenignLogImporter
 from attacks.config import load_campaign, validate_campaign
 from attacks.modules.base import AttackModuleRegistry
 from attacks.orchestrator import CampaignOrchestrator
+from security_gym.data.composer import StreamComposer
 
 # Trigger module registration
 import attacks.modules  # noqa: F401
@@ -82,6 +83,32 @@ def cmd_import_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compose(args: argparse.Namespace) -> int:
+    """Compose a mixed benign+attack stream from a YAML config."""
+    path = Path(args.config)
+    if not path.exists():
+        print(f"Error: config file not found: {path}")
+        return 1
+
+    composer = StreamComposer()
+    try:
+        stats = composer.compose(path, dry_run=args.dry_run)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}")
+        return 1
+
+    prefix = "[DRY RUN] " if args.dry_run else ""
+    print(f"\n{prefix}Composed {stats.total} events "
+          f"({stats.simulated_days:.0f} days, {stats.attack_campaigns} campaigns)")
+    print(f"  Benign: {stats.benign_count}")
+    print(f"  Attack: {stats.attack_count}")
+    if stats.attack_types_used:
+        print("  Attack types:")
+        for atype, count in sorted(stats.attack_types_used.items()):
+            print(f"    {atype}: {count} campaigns")
+    return 0
+
+
 def cmd_list_modules(args: argparse.Namespace) -> int:
     """List available attack modules."""
     modules = AttackModuleRegistry.available()
@@ -124,6 +151,12 @@ def main() -> int:
     imp_parser.add_argument("--db", default="data/campaigns.db", help="EventStore database path")
     imp_parser.add_argument("--host", default=None, help="Source hostname label (e.g. hopper, isildur)")
     imp_parser.set_defaults(func=cmd_import_logs)
+
+    # compose
+    compose_parser = subparsers.add_parser("compose", help="Compose a mixed stream from YAML config")
+    compose_parser.add_argument("config", help="Path to composition YAML config")
+    compose_parser.add_argument("--dry-run", action="store_true", help="Preview without writing output DB")
+    compose_parser.set_defaults(func=cmd_compose)
 
     # list-modules
     list_parser = subparsers.add_parser("list-modules", help="List attack modules")

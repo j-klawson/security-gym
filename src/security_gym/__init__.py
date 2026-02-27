@@ -19,6 +19,7 @@ from security_gym.parsers.base import ParsedEvent, Parser  # noqa: E402
 from security_gym.parsers.registry import ParserRegistry  # noqa: E402
 from security_gym.targets.builder import HEAD_NAMES, N_HEADS, TargetBuilder  # noqa: E402
 from security_gym.adapters.scan_stream import SecurityGymStream  # noqa: E402
+from security_gym.data.composer import CompositionStats, StreamComposer  # noqa: E402
 
 __all__ = [
     "EventStore",
@@ -38,4 +39,6 @@ __all__ = [
     "TargetBuilder",
     "HEAD_NAMES",
     "N_HEADS",
+    "StreamComposer",
+    "CompositionStats",
 ]

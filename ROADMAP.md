@@ -46,7 +46,11 @@ Connect security-gym to alberta-framework and run continual learning experiments
 - Benchmark against chronos-sec honeypot results
 - Non-stationarity analysis (concept drift across campaign phases)
 
-## Phase 7 — Analysis & Publication (Future)
+## Phase 7 — Streaming Server (Future)
+
+Internet-facing service that serves composed streams to remote agents. Wraps SecurityGymStream with a network protocol (gRPC/WebSocket), authentication, and rate limiting. Enables multiple researchers and agents to consume the same composed stream without local DB access.
+
+## Phase 8 — Analysis & Publication (Future)
 
 Results analysis, dataset release, and dissertation integration.
 

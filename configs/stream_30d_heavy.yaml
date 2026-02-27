@@ -1,0 +1,27 @@
+# 30-day heavy attack stream — stress testing
+#
+# High attack rate (10 campaigns/day) for stress-testing learner
+# robustness under heavy non-stationarity.
+#
+# Usage:
+#   python -m attacks compose configs/stream_30d_heavy.yaml
+
+stream:
+  duration: 30d
+  seed: 99
+
+  benign:
+    db: data/benign.db
+
+  attacks:
+    db: data/campaigns.db
+    campaigns_per_day: 10.0
+
+    distribution:
+      discovery: 0.25
+      brute_force: 0.25
+      web_exploit: 0.25
+      execution: 0.25
+
+  output:
+    db: data/exp_30d_heavy.db
