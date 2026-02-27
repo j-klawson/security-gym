@@ -125,11 +125,27 @@ class BenignLogImporter:
             raise ValueError(f"Path must be a directory or tarball: {path}")
 
     def _import_tarball(self, tar_path: Path) -> int:
-        """Extract tarball to temp dir and import."""
+        """Extract tarball to temp dir and import.
+
+        Skips symlinks/hardlinks and tolerates truncated archives.
+        """
         logger.info("Extracting %s ...", tar_path.name)
         with tempfile.TemporaryDirectory(prefix="benign_import_") as tmp_dir:
             with tarfile.open(tar_path) as tf:
-                tf.extractall(tmp_dir, filter="data")  # noqa: S202
+                while True:
+                    try:
+                        member = tf.next()
+                    except tarfile.ReadError:
+                        logger.warning("Truncated tar archive, processing what was read")
+                        break
+                    if member is None:
+                        break
+                    if not member.isfile():
+                        continue
+                    try:
+                        tf.extract(member, tmp_dir, filter="data")  # noqa: S202
+                    except (tarfile.LinkOutsideDestinationError, tarfile.ReadError) as exc:
+                        logger.debug("Skipping tar member %s: %s", member.name, exc)
             return self._import_directory(Path(tmp_dir))
 
     def _import_directory(self, root: Path) -> int:
