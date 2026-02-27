@@ -38,6 +38,7 @@ pytest tests/test_env.py -v       # Run env tests only
 ruff check src/ tests/ attacks/   # Lint
 python -m attacks validate campaigns/ssh_brute_only.yaml  # Validate campaign
 python -m attacks run campaigns/ssh_brute_only.yaml --dry-run  # Preview campaign
+python -m attacks import-logs real_logs/hopper.tar --db data/campaigns.db --host hopper  # Import benign logs
 python -m attacks list-modules    # Show available attack modules
 python -m build                   # Build wheel
 ```

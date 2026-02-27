@@ -8,6 +8,7 @@ import logging
 import sys
 from pathlib import Path
 
+from attacks.collection.import_logs import BenignLogImporter
 from attacks.config import load_campaign, validate_campaign
 from attacks.modules.base import AttackModuleRegistry
 from attacks.orchestrator import CampaignOrchestrator
@@ -60,6 +61,27 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_logs(args: argparse.Namespace) -> int:
+    """Import benign log files into EventStore."""
+    path = Path(args.path)
+    if not path.exists():
+        print(f"Error: path not found: {path}")
+        return 1
+
+    db_path = Path(args.db)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    importer = BenignLogImporter(db_path, source_host=args.host)
+    try:
+        total = importer.import_path(path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
+        return 1
+
+    print(f"\nImported {total} benign events into {db_path}")
+    return 0
+
+
 def cmd_list_modules(args: argparse.Namespace) -> int:
     """List available attack modules."""
     modules = AttackModuleRegistry.available()
@@ -95,6 +117,13 @@ def main() -> int:
     val_parser = subparsers.add_parser("validate", help="Validate campaign YAML")
     val_parser.add_argument("campaign", help="Path to campaign YAML")
     val_parser.set_defaults(func=cmd_validate)
+
+    # import-logs
+    imp_parser = subparsers.add_parser("import-logs", help="Import benign logs into EventStore")
+    imp_parser.add_argument("path", help="Path to tarball or directory of log files")
+    imp_parser.add_argument("--db", default="data/campaigns.db", help="EventStore database path")
+    imp_parser.add_argument("--host", default=None, help="Source hostname label (e.g. hopper, isildur)")
+    imp_parser.set_defaults(func=cmd_import_logs)
 
     # list-modules
     list_parser = subparsers.add_parser("list-modules", help="List attack modules")

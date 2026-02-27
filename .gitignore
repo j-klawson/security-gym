@@ -22,3 +22,4 @@ data/*.sqlite
 htmlcov/
 .coverage
 *.log
+real_logs/
