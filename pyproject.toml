@@ -22,12 +22,13 @@ dependencies = [
     "gymnasium>=1.0.0",
     "numpy>=1.24.0",
     "mmh3>=4.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 alberta = ["alberta-framework>=0.8.0", "jax>=0.4.20", "jaxlib>=0.4.20"]
 collection = ["watchdog>=3.0.0"]
-attacks = ["paramiko>=3.0.0", "requests>=2.28.0", "pyyaml>=6.0", "scapy>=2.5.0"]
+attacks = ["paramiko>=3.0.0", "requests>=2.28.0", "scapy>=2.5.0"]
 dev = ["pytest>=7.0", "ruff>=0.4.0"]
 all = ["security-gym[alberta,collection,attacks,dev]"]
 
