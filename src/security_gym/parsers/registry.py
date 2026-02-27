@@ -22,11 +22,11 @@ class ParserRegistry:
         return decorator
 
     @classmethod
-    def get(cls, name: str, **kwargs) -> Parser:
+    def get(cls, name: str) -> Parser:
         """Instantiate and return a registered parser by name."""
         if name not in cls._parsers:
             raise KeyError(f"Unknown parser: {name!r}. Available: {cls.available()}")
-        return cls._parsers[name](**kwargs)
+        return cls._parsers[name]()
 
     @classmethod
     def available(cls) -> list[str]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -15,6 +15,16 @@ from security_gym.parsers.base import ParsedEvent
 from security_gym.parsers.registry import ParserRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_utc_offset(offset_str: str) -> timedelta:
+    """Parse a UTC offset string like '+0530' or '-0500' into a timedelta."""
+    offset_str = offset_str.strip()
+    sign = 1 if offset_str[0] == "+" else -1
+    digits = offset_str.lstrip("+-")
+    hours = int(digits[:2])
+    minutes = int(digits[2:4]) if len(digits) >= 4 else 0
+    return timedelta(hours=sign * hours, minutes=sign * minutes)
 
 
 class LogCollector:
@@ -35,9 +45,10 @@ class LogCollector:
         self.end_time = campaign_end + buffer
         self._client: paramiko.SSHClient | None = None
         self._sftp: paramiko.SFTPClient | None = None
+        self._target_tz_offset: timedelta = timedelta(0)
 
     def connect(self) -> None:
-        """Establish SSH connection to target."""
+        """Establish SSH connection to target and detect its timezone."""
         self._client = paramiko.SSHClient()
         self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         key_path = Path(self.target.ssh_key).expanduser()
@@ -55,6 +66,23 @@ class LogCollector:
         )
         self._sftp = self._client.open_sftp()
         logger.info("Connected to %s", self.target.host)
+
+        # Detect target timezone offset
+        self._target_tz_offset = self._detect_timezone()
+
+    def _detect_timezone(self) -> timedelta:
+        """Detect the target's UTC offset via SSH."""
+        assert self._client is not None
+        try:
+            _, stdout, _ = self._client.exec_command("date +%z", timeout=10)
+            offset_str = stdout.read().decode().strip()
+            if offset_str:
+                offset = _parse_utc_offset(offset_str)
+                logger.info("Target timezone offset: %s", offset_str)
+                return offset
+        except Exception as e:
+            logger.warning("Could not detect target timezone: %s (assuming UTC)", e)
+        return timedelta(0)
 
     def close(self) -> None:
         """Close SSH connection."""
@@ -99,7 +127,13 @@ class LogCollector:
         assert source.parser is not None
         assert source.remote_path is not None
 
-        parser = ParserRegistry.get(source.parser, year=self.start_time.year)
+        parser = ParserRegistry.get(source.parser)
+
+        # BSD syslog timestamps are local time with no timezone info.
+        # The parser assumes UTC, so we convert our UTC window to the
+        # target's local time for correct comparison.
+        local_start = self.start_time + self._target_tz_offset
+        local_end = self.end_time + self._target_tz_offset
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as tmp:
             tmp_path = Path(tmp.name)
@@ -109,8 +143,10 @@ class LogCollector:
             self._sftp.get(source.remote_path, str(tmp_path))
 
             for event in parser.parse_file(tmp_path):
-                # Filter to campaign time window
-                if self.start_time <= event.timestamp <= self.end_time:
+                # Filter to campaign time window (in target-local time)
+                if local_start <= event.timestamp <= local_end:
+                    # Convert from pseudo-UTC (actually local) to real UTC
+                    event.timestamp = event.timestamp - self._target_tz_offset
                     yield event
         finally:
             tmp_path.unlink(missing_ok=True)
@@ -137,7 +173,7 @@ class LogCollector:
             logger.warning("Command stderr for %s: %s", source.name, err[:500])
 
         if source.parser:
-            parser = ParserRegistry.get(source.parser, year=self.start_time.year)
+            parser = ParserRegistry.get(source.parser)
             for line in output.splitlines():
                 event = parser.parse_line(line)
                 if event is not None:

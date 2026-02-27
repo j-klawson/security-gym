@@ -50,7 +50,19 @@ Connect security-gym to alberta-framework and run continual learning experiments
 
 Internet-facing service that serves composed streams to remote agents. Wraps SecurityGymStream with a network protocol (gRPC/WebSocket), authentication, and rate limiting. Enables multiple researchers and agents to consume the same composed stream without local DB access.
 
-## Phase 8 — Analysis & Publication (Future)
+## Phase 8 — NetFlow Data (Future)
+
+Extend security-gym with benign and attack NetFlow data generation. Attack traffic will likely be encrypted (TLS/SSH tunnels), making payload inspection useless — the learning agent must detect threats from flow metadata alone (packet sizes, timing, byte counts, duration, flags). This is an interesting test of whether continual learning agents can pick up on subtle distributional signatures in metadata when content is opaque.
+
+- NetFlow v5/v9 or IPFIX collector and parser
+- Benign flow generation (normal web browsing, DNS, software updates, etc.)
+- Attack flow generation (C2 beacons, exfiltration over encrypted channels, lateral movement)
+- Flow feature extractor (bytes/packets per flow, duration, inter-flow timing, port entropy)
+- Ground-truth labeling for flow data (time+IP matching, same as log campaigns)
+- StreamComposer support for mixed log + NetFlow experiment streams
+- Evaluate whether metadata-only features are sufficient for detection without payload inspection
+
+## Phase 9 — Analysis & Publication (Future)
 
 Results analysis, dataset release, and dissertation integration.
 
