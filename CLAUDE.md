@@ -8,6 +8,7 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 
 - `src/security_gym/` — installable package (`pip install -e .`)
 - `attacks/` — attack scripts for data generation (NOT pip-installed)
+- `campaigns/` — YAML campaign configs for Isildur (ssh_brute_only, log4shell_only, recon_only, recon_ssh_log4shell)
 - `server/` — target VM provisioning docs and Docker Compose for vulnerable services
 - `data/` — runtime data directory (gitignored)
 - `tests/` — pytest test suite

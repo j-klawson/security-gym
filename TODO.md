@@ -24,5 +24,5 @@ Current action items for security-gym development.
 
 ## Housekeeping
 
-- [ ] Add campaign YAML files for Log4Shell and recon-only scenarios
+- [x] Add campaign YAML files for Log4Shell and recon-only scenarios
 - [ ] Document dataset schema and labeling methodology

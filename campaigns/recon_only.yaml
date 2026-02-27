@@ -1,0 +1,45 @@
+campaign:
+  name: "Recon Only"
+  description: >
+    Single-phase network reconnaissance campaign against Isildur.
+    Sends SYN probes from spoofed source IPs across common service ports.
+    Generates syslog/journal entries for port scan detection training.
+  seed: 42
+
+  target:
+    host: 192.168.2.201
+    ssh_user: researcher
+    ssh_key: ~/.ssh/isildur_research
+    ssh_port: 22
+
+  phases:
+    - name: "Network Reconnaissance"
+      module: recon
+      mitre_technique: "T1046"
+      mitre_tactic: "TA0007"
+      attack_type: discovery
+      attack_stage: recon
+      severity: 1
+      params:
+        ports: [22, 80, 443, 8080, 3306, 5432]
+        scan_type: syn
+      ip_source:
+        strategy: spoofed
+        count: 200
+        subnet: "10.0.0.0/8"
+      timing:
+        duration_seconds: 180
+        profile: constant
+        jitter_ms: [50, 300]
+
+  collection:
+    log_sources:
+      - name: syslog
+        parser: syslog
+        remote_path: /var/log/syslog
+      - name: journal
+        parser: journal
+        remote_command: "journalctl --since '1 hour ago' -o json"
+    output:
+      db_path: data/campaigns.db
+      time_buffer_seconds: 60
