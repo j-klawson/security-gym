@@ -59,8 +59,8 @@ class SyslogParser(Parser):
         if not header:
             return None
 
-        # Reject sshd — those belong to auth_log
-        if header.service == "sshd":
+        # Reject sshd / sshd-session — those belong to auth_log
+        if header.service.startswith("sshd"):
             return None
 
         event_type, extra_fields = _classify_event(header.service, header.message)

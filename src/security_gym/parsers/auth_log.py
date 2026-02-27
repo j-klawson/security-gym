@@ -81,7 +81,8 @@ class AuthLogParser(Parser):
         if not header:
             return None
 
-        if header.service != "sshd":
+        # Accept both "sshd" (traditional) and "sshd-session" (OpenSSH 9.8+)
+        if not header.service.startswith("sshd"):
             return None
 
         for pattern_name, regex in PATTERNS.items():

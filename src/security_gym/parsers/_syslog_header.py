@@ -12,7 +12,7 @@ SYSLOG_PATTERN = re.compile(
     r"(?P<day>\d{1,2})\s+"
     r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
     r"(?P<hostname>\S+)\s+"
-    r"(?P<service>\w+)"
+    r"(?P<service>[\w-]+)"
     r"(?:\[(?P<pid>\d+)\])?\s*:\s*"
     r"(?P<message>.*)$"
 )
@@ -22,7 +22,7 @@ RFC3339_SYSLOG_PATTERN = re.compile(
     r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
     r"(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z))\s+"
     r"(?P<hostname>\S+)\s+"
-    r"(?P<service>\w+)"
+    r"(?P<service>[\w-]+)"
     r"(?:\[(?P<pid>\d+)\])?\s*:\s*"
     r"(?P<message>.*)$"
 )
