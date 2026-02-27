@@ -99,7 +99,7 @@ class LogCollector:
         assert source.parser is not None
         assert source.remote_path is not None
 
-        parser = ParserRegistry.get(source.parser)
+        parser = ParserRegistry.get(source.parser, year=self.start_time.year)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as tmp:
             tmp_path = Path(tmp.name)
@@ -137,7 +137,7 @@ class LogCollector:
             logger.warning("Command stderr for %s: %s", source.name, err[:500])
 
         if source.parser:
-            parser = ParserRegistry.get(source.parser)
+            parser = ParserRegistry.get(source.parser, year=self.start_time.year)
             for line in output.splitlines():
                 event = parser.parse_line(line)
                 if event is not None:
