@@ -100,6 +100,65 @@ class TestAuthLogParser:
         assert event.timestamp.month == 2
 
 
+class TestAuthLogParserRFC3339:
+    """Test auth_log parser with RFC 3339 timestamps (rsyslog on modern Debian/Ubuntu)."""
+
+    def setup_method(self):
+        self.parser = AuthLogParser(year=2026)
+
+    def test_password_auth_success(self):
+        line = "2026-02-22T10:16:00.123456-05:00 myhost sshd[1235]: Accepted password for admin from 10.0.0.5 port 54321 ssh2"
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.event_type == "auth_success"
+        assert event.src_ip == "10.0.0.5"
+        assert event.username == "admin"
+        assert event.service == "sshd"
+        assert event.fields["auth_method"] == "password"
+        assert event.session_id == "10.0.0.5:54321"
+
+    def test_failed_password(self):
+        line = "2026-02-22T10:15:30.000001-05:00 myhost sshd[1234]: Failed password for admin from 192.168.1.100 port 22345 ssh2"
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.event_type == "auth_failure"
+        assert event.src_ip == "192.168.1.100"
+        assert event.username == "admin"
+
+    def test_session_open(self):
+        line = "2026-02-22T10:16:01.662021-05:00 myhost sshd[1235]: pam_unix(sshd:session): session opened for user admin by (uid=0)"
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.event_type == "session_open"
+        assert event.username == "admin"
+
+    def test_session_close(self):
+        line = "2026-02-22T10:20:00.000000+00:00 myhost sshd[1235]: pam_unix(sshd:session): session closed for user admin"
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.event_type == "session_close"
+
+    def test_timestamp_converted_to_utc(self):
+        line = "2026-02-22T10:16:00.123456-05:00 myhost sshd[1235]: Accepted password for admin from 10.0.0.5 port 54321 ssh2"
+        event = self.parser.parse_line(line)
+        assert event.timestamp.tzinfo == timezone.utc
+        # 10:16 EST (-05:00) = 15:16 UTC
+        assert event.timestamp.hour == 15
+        assert event.timestamp.minute == 16
+
+    def test_utc_offset_z(self):
+        line = "2026-02-22T15:16:00Z myhost sshd[1235]: Accepted password for admin from 10.0.0.5 port 54321 ssh2"
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.timestamp.hour == 15
+        assert event.timestamp.tzinfo == timezone.utc
+
+    def test_non_sshd_returns_none(self):
+        line = "2026-02-22T10:15:00.000000-05:00 myhost CRON[5678]: (root) CMD (/usr/bin/something)"
+        event = self.parser.parse_line(line)
+        assert event is None
+
+
 class TestParserRegistry:
     def test_auth_log_registered(self):
         assert "auth_log" in ParserRegistry.available()

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from security_gym.parsers._syslog_header import SYSLOG_PATTERN, parse_syslog_timestamp
+from security_gym.parsers._syslog_header import parse_syslog_header
 from security_gym.parsers.base import ParsedEvent, Parser
 from security_gym.parsers.registry import ParserRegistry
 
@@ -55,32 +55,24 @@ class SyslogParser(Parser):
         self.year = year or datetime.now(timezone.utc).year
 
     def parse_line(self, line: str) -> ParsedEvent | None:
-        header = SYSLOG_PATTERN.match(line)
+        header = parse_syslog_header(line, self.year)
         if not header:
             return None
 
-        service = header.group("service")
         # Reject sshd — those belong to auth_log
-        if service == "sshd":
+        if header.service == "sshd":
             return None
 
-        timestamp = parse_syslog_timestamp(
-            header.group("month"), int(header.group("day")),
-            header.group("time"), self.year,
-        )
-        message = header.group("message")
-        pid = int(header.group("pid")) if header.group("pid") else None
+        event_type, extra_fields = _classify_event(header.service, header.message)
 
-        event_type, extra_fields = _classify_event(service, message)
-
-        fields = {"message": message, "event_type": event_type, **extra_fields}
+        fields = {"message": header.message, "event_type": event_type, **extra_fields}
 
         return ParsedEvent(
-            timestamp=timestamp,
+            timestamp=header.timestamp,
             source="syslog",
             raw_line=line,
             event_type=event_type,
             fields=fields,
-            service=service,
-            pid=pid,
+            service=header.service,
+            pid=header.pid,
         )

@@ -69,6 +69,24 @@ class TestFileRouting:
     def test_nested_path(self):
         assert _route_file("var/log/auth.log") == "auth_log"
 
+    def test_apache_vhost_access(self):
+        assert _route_file("apache2/deb12test.lhsc.on.ca_access.log") == "web_access"
+
+    def test_apache_vhost_access_rotated(self):
+        assert _route_file("apache2/deb12test.lhsc.on.ca_access.log.1") == "web_access"
+
+    def test_apache_vhost_access_gz(self):
+        assert _route_file("apache2/mysite.com_access.log.2.gz") == "web_access"
+
+    def test_apache_vhost_error(self):
+        assert _route_file("apache2/deb12test.lhsc.on.ca_error.log") == "web_error"
+
+    def test_apache_vhost_error_rotated(self):
+        assert _route_file("apache2/mysite.com_error.log.3.gz") == "web_error"
+
+    def test_apache_vhost_nested(self):
+        assert _route_file("var/log/apache2/site_access.log") == "web_access"
+
     def test_gz_still_routes(self):
         """GZ files route to a parser (caller handles decompression)."""
         assert _route_file("auth.log.1.gz") == "auth_log"

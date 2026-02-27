@@ -15,7 +15,7 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 
 ## Key Patterns
 
-- **Parsers**: decorator-based registry (`@ParserRegistry.register('auth_log')`); five parsers: `auth_log`, `syslog`, `web_access`, `web_error`, `journal`. Shared syslog header in `_syslog_header.py`. Each parser stores `event_type` in `fields["event_type"]` for DB round-trip.
+- **Parsers**: decorator-based registry (`@ParserRegistry.register('auth_log')`); five parsers: `auth_log`, `syslog`, `web_access`, `web_error`, `journal`. Shared syslog header in `_syslog_header.py` with `parse_syslog_header()` supporting both BSD (`Feb 22 00:55:01`) and RFC 3339 (`2026-02-22T00:55:01.662021-05:00`) timestamp formats; RFC 3339 offsets are converted to UTC. Each parser stores `event_type` in `fields["event_type"]` for DB round-trip.
 - **EventStore**: SQLite with WAL mode, ID-based cursor for resumable reads
 - **Features**: three modes — `event` (24-dim), `hashed` (configurable), `session` (20-dim with subnet entropy, per-session state tracking)
 - **Wrappers**: `HashedFeatureWrapper`, `SessionAggregationWrapper`, `WindowedWrapper`, `DecayingTraceWrapper` — composable gymnasium wrappers in `envs/wrappers.py`

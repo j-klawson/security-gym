@@ -85,3 +85,48 @@ class TestSyslogParser:
         line = "Feb 17 10:00:00 myhost CRON[1234]: (root) CMD (test)"
         event = self.parser.parse_line(line)
         assert event.fields["event_type"] == "cron"
+
+
+class TestSyslogParserRFC3339:
+    """Test syslog parser with RFC 3339 timestamps (rsyslog on modern Debian/Ubuntu)."""
+
+    def setup_method(self):
+        self.parser = SyslogParser(year=2026)
+
+    def test_cron_event(self):
+        line = "2026-02-22T00:55:01.662021-05:00 myhost CRON[3567024]: (root) CMD (/usr/bin/something)"
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.event_type == "cron"
+        assert event.source == "syslog"
+        assert event.service == "CRON"
+        assert event.pid == 3567024
+
+    def test_systemd_start(self):
+        line = "2026-02-22T10:00:02.000000+00:00 myhost systemd[1]: Started Apache HTTP Server."
+        event = self.parser.parse_line(line)
+        assert event is not None
+        assert event.event_type == "service_start"
+        assert event.service == "systemd"
+
+    def test_sshd_rejected(self):
+        """sshd lines should be rejected (handled by auth_log parser)."""
+        line = "2026-02-22T10:15:30.123456-05:00 myhost sshd[1234]: Failed password for admin from 192.168.1.100 port 22345 ssh2"
+        event = self.parser.parse_line(line)
+        assert event is None
+
+    def test_timestamp_converted_to_utc(self):
+        line = "2026-02-22T10:00:00.123456-05:00 myhost CRON[1234]: (root) CMD (test)"
+        event = self.parser.parse_line(line)
+        assert event.timestamp.tzinfo == timezone.utc
+        # 10:00 EST (-05:00) = 15:00 UTC
+        assert event.timestamp.hour == 15
+
+    def test_garbage_returns_none(self):
+        assert self.parser.parse_line("not a log line") is None
+        assert self.parser.parse_line("") is None
+
+    def test_event_type_in_fields(self):
+        line = "2026-02-22T00:55:01.662021-05:00 myhost CRON[1234]: (root) CMD (test)"
+        event = self.parser.parse_line(line)
+        assert event.fields["event_type"] == "cron"

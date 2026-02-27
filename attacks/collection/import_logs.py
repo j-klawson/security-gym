@@ -47,6 +47,13 @@ def _route_file(rel_path: str) -> str | None:
         if pattern in rel_path:
             return parser_name
 
+    # Apache vhost-named logs (e.g. apache2/mysite.com_access.log.1.gz)
+    if "apache2/" in rel_path:
+        if "_access.log" in name:
+            return "web_access"
+        if "_error.log" in name:
+            return "web_error"
+
     return None
 
 

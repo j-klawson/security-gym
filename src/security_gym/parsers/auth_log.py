@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from security_gym.parsers._syslog_header import SYSLOG_PATTERN, parse_syslog_timestamp
+from security_gym.parsers._syslog_header import parse_syslog_header
 from security_gym.parsers.base import ParsedEvent, Parser
 from security_gym.parsers.registry import ParserRegistry
 
@@ -77,22 +77,15 @@ class AuthLogParser(Parser):
         self.year = year or datetime.now(timezone.utc).year
 
     def parse_line(self, line: str) -> ParsedEvent | None:
-        header = SYSLOG_PATTERN.match(line)
+        header = parse_syslog_header(line, self.year)
         if not header:
             return None
 
-        service = header.group("service")
-        if service != "sshd":
+        if header.service != "sshd":
             return None
 
-        timestamp = self._parse_timestamp(
-            header.group("month"), int(header.group("day")), header.group("time")
-        )
-        message = header.group("message")
-        pid = int(header.group("pid")) if header.group("pid") else None
-
         for pattern_name, regex in PATTERNS.items():
-            m = regex.match(message)
+            m = regex.match(header.message)
             if m:
                 groups = m.groupdict()
                 port_str = groups.get("port")
@@ -101,7 +94,7 @@ class AuthLogParser(Parser):
                 port = int(port_str) if port_str else None
                 session_id = f"{ip}:{port}" if ip and port else None
 
-                fields = {"message": message, "pattern": pattern_name}
+                fields = {"message": header.message, "pattern": pattern_name}
                 if "publickey" in pattern_name:
                     fields["auth_method"] = "publickey"
                 elif "password" in pattern_name:
@@ -114,7 +107,7 @@ class AuthLogParser(Parser):
                     fields["preauth"] = True
 
                 return ParsedEvent(
-                    timestamp=timestamp,
+                    timestamp=header.timestamp,
                     source="auth_log",
                     raw_line=line,
                     event_type=_EVENT_TYPE_MAP[pattern_name],
@@ -123,10 +116,7 @@ class AuthLogParser(Parser):
                     username=user,
                     service="sshd",
                     session_id=session_id,
-                    pid=pid,
+                    pid=header.pid,
                 )
 
         return None
-
-    def _parse_timestamp(self, month: str, day: int, time_str: str) -> datetime:
-        return parse_syslog_timestamp(month, day, time_str, self.year)
