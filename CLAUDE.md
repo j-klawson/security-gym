@@ -27,6 +27,8 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 - **Registration**: belt+suspenders — `__init__.py` calls `register_envs()` on import AND `pyproject.toml` entry point for auto-discovery
 - **Attack Modules**: decorator-based registry (`@AttackModuleRegistry.register('ssh_brute_force')`); five modules: `recon` (scapy SYN scan), `ssh_brute_force` (paramiko), `log4shell` (requests + JNDI injection), `credential_stuffing` (paramiko, unique cred pairs tried once each), `ssh_post_auth` (paramiko, post-auth command execution with 4 command profiles + optional payload download). Non-stationary `TimingProfile` with constant/accelerating/decelerating/custom profiles. Full kill chain campaign: recon → credential stuffing → post-auth execution.
 - **Campaign Framework**: YAML-driven orchestrator — load config → execute phases → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules/compose`.
+- **Label Validation**: `scripts/validate_labels.py` — 9 checks (label consistency, raw line spot-checks, campaign boundaries, campaign type cross-val, target array NaN masking, attack type distribution, temporal order, no unlabeled events, session coherence). Supports `--check NAME` to run subset, `--spot-check N`, `--sample-size N`, `--verbose`. Exit 0 = all pass/skip, exit 1 = any FAIL. Distribution check is WARN-only (campaign weights control frequency, not event count — brute_force generates ~40x more events per campaign than discovery).
+- **Known Data Quality**: campaigns.db has 87 temporal order violations (multi-server import boundary) and 6 mixed-label sessions (labeler edge cases). Composed experiment streams are clean — StreamComposer sorts by timestamp. benign.db shares the temporal order issue.
 - **CI**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main
 
 ## Commands
@@ -44,6 +46,8 @@ python -m attacks import-logs real_logs/server1-var-log.tar --db data/benign.db 
 python -m attacks list-modules    # Show available attack modules
 python -m attacks compose configs/stream_90d_mixed.yaml  # Compose experiment stream
 python -m attacks compose configs/stream_90d_mixed.yaml --dry-run  # Preview composition
+python scripts/validate_labels.py data/campaigns.db -v            # Validate label accuracy
+python scripts/validate_labels.py data/exp01_90d.db --spot-check 20  # Spot-check composed stream
 python -m build                   # Build wheel
 ```
 
