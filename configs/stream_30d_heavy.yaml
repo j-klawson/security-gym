@@ -11,17 +11,18 @@ stream:
   seed: 99
 
   benign:
-    db: data/benign.db
+    db: ../data/benign.db
 
   attacks:
-    db: data/campaigns.db
+    db: ../data/campaigns.db
     campaigns_per_day: 10.0
 
     distribution:
-      discovery: 0.25
-      brute_force: 0.25
-      web_exploit: 0.25
-      execution: 0.25
+      discovery: 0.20
+      brute_force: 0.20
+      web_exploit: 0.20
+      credential_stuffing: 0.20
+      execution: 0.20
 
   output:
-    db: data/exp_30d_heavy.db
+    db: ../data/exp_30d_heavy.db

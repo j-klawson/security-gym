@@ -1,0 +1,46 @@
+# 365-day realistic internet-facing server — primary experiment stream
+#
+# Models a year of traffic on a typical internet-facing Linux server.
+# Attack distribution reflects real-world prevalence:
+#   - Port scans and SSH brute force dominate (constant background noise)
+#   - Credential stuffing is common (breach dump reuse)
+#   - Web exploits are targeted but less frequent
+#   - Post-auth execution is rare (most attacks fail at initial access)
+#
+# At 2.5 campaigns/day, this produces ~912 attack campaigns across
+# the year — enough non-stationarity for continual learning while
+# maintaining realistic benign-to-malicious ratios.
+#
+# Usage:
+#   python -m attacks compose configs/stream_365d_realistic.yaml
+#   python -m attacks compose configs/stream_365d_realistic.yaml --dry-run
+
+stream:
+  duration: 365d
+  seed: 2026
+
+  benign:
+    db: ../data/benign.db
+
+  attacks:
+    db: ../data/campaigns.db
+
+    # ~2.5 campaigns/day — realistic for an internet-facing server
+    # with SSH exposed. Produces ~912 campaigns/year.
+    campaigns_per_day: 2.5
+
+    # Distribution based on real-world attack prevalence:
+    #   - Recon/scans: most common, constant background noise
+    #   - Brute force: dominant SSH attack pattern
+    #   - Credential stuffing: growing with breach dump availability
+    #   - Web exploits: targeted, requires specific vulnerabilities
+    #   - Execution: rare, only when attacker gains valid credentials
+    distribution:
+      discovery: 0.30           # TA0007 — port scans, service enumeration
+      brute_force: 0.30         # TA0006 — SSH password guessing
+      credential_stuffing: 0.20 # TA0006 — breach dump credential reuse
+      web_exploit: 0.15         # TA0001 — Log4Shell, known CVEs
+      execution: 0.05           # TA0002 — post-auth (rare success)
+
+  output:
+    db: ../data/exp_365d_realistic.db

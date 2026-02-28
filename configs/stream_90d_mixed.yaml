@@ -12,10 +12,10 @@ stream:
   seed: 42
 
   benign:
-    db: data/benign.db            # Hopper server logs — cycled to fill duration
+    db: ../data/benign.db            # Hopper server logs — cycled to fill duration
 
   attacks:
-    db: data/campaigns.db         # Attack event templates from Isildur campaigns
+    db: ../data/campaigns.db         # Attack event templates from Isildur campaigns
 
     # Poisson process rate for campaign scheduling
     campaigns_per_day: 3.0
@@ -29,4 +29,4 @@ stream:
       execution: 0.05             # TA0002 / T1059 — command execution
 
   output:
-    db: data/exp01_90d.db
+    db: ../data/exp01_90d.db

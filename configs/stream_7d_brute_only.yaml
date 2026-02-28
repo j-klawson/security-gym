@@ -11,14 +11,14 @@ stream:
   seed: 123
 
   benign:
-    db: data/benign.db
+    db: ../data/benign.db
 
   attacks:
-    db: data/campaigns.db
+    db: ../data/campaigns.db
     campaigns_per_day: 1.0
 
     distribution:
       brute_force: 1.0
 
   output:
-    db: data/exp_7d_brute.db
+    db: ../data/exp_7d_brute.db

