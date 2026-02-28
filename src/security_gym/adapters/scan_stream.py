@@ -24,7 +24,7 @@ from security_gym.parsers.base import ParsedEvent
 from security_gym.targets.builder import N_HEADS, TargetBuilder
 
 try:
-    import jax.numpy as jnp
+    import jax.numpy as jnp  # type: ignore[import-not-found]
     from typing import NamedTuple
 
     class TimeStep(NamedTuple):
