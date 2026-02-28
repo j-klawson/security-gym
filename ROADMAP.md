@@ -62,7 +62,18 @@ Extend security-gym with benign and attack NetFlow data generation. Attack traff
 - StreamComposer support for mixed log + NetFlow experiment streams
 - Evaluate whether metadata-only features are sufficient for detection without payload inspection
 
-## Phase 9 — Analysis & Publication (Future)
+## Phase 9 — Kernel Event Telemetry (Future)
+
+Hook the RL agent directly into the Linux kernel for real-time observation of system-level events. Moves beyond log parsing to native kernel telemetry — the agent observes syscalls, process creation, file access, and network connections as they happen. This is the path toward an agent that can detect and respond to threats at the OS level rather than after the fact in log files.
+
+- eBPF-based event collection (syscalls, process exec, file open, network connect)
+- Kernel event parser and feature extractor
+- Attack campaigns that generate kernel-level telemetry (privilege escalation, rootkits, fileless malware)
+- Real-time streaming from kernel to agent (low-latency path, not log-based)
+- Integration with existing log + NetFlow streams for multi-modal observation
+- Evaluate agent performance on kernel events vs. log-only vs. combined
+
+## Phase 10 — Analysis & Publication (Future)
 
 Results analysis, dataset release, and dissertation integration.
 

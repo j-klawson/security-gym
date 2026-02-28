@@ -1,5 +1,6 @@
 # security-gym
 
+[![Gymnasium](https://img.shields.io/badge/Gymnasium-compatible-blue)](https://gymnasium.farama.org/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18810299.svg)](https://doi.org/10.5281/zenodo.18810299)
 
 Gymnasium-compatible environment that replays labeled Linux log streams for continual learning research. Scripted attacks mixed with real server traffic produce ground-truth-labeled data — no episodes, no resets, just a continuous stream of observations and multi-head prediction targets.
@@ -66,7 +67,7 @@ security-gym download
 security-gym list
 ```
 
-Or manually download from the [Releases page](https://github.com/j-klawson/security-gym/releases) and place `.db` files in `data/`.
+Or manually download `campaigns.db` from the [Releases page](https://github.com/j-klawson/security-gym/releases) and place it in `data/`.
 
 ## Quick Start
 
@@ -76,7 +77,7 @@ Or manually download from the [Releases page](https://github.com/j-klawson/secur
 import gymnasium as gym
 import security_gym
 
-env = gym.make("SecurityLogStream-v0", db_path="data/events.db")
+env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db")
 obs, info = env.reset()
 
 while True:
@@ -100,10 +101,10 @@ The environment supports three feature representations:
 
 ```python
 # Event features (24-dim): one-hot source/event_type + cyclic time + binary flags
-env = gym.make("SecurityLogStream-v0", db_path="data/events.db", feature_mode="event")
+env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db", feature_mode="event")
 
 # Hashed features (configurable dim): MurmurHash3 of raw log text
-env = gym.make("SecurityLogStream-v0", db_path="data/events.db",
+env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db",
                feature_mode="hashed", hash_dim=512)
 ```
 
@@ -119,21 +120,21 @@ from security_gym.envs.wrappers import (
 )
 
 # Session features (20-dim) with per-IP/session state tracking
-env = gym.make("SecurityLogStream-v0", db_path="data/events.db")
+env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db")
 env = SessionAggregationWrapper(env)
 
 # Sliding window: stack last 10 observations into a flat vector
 env = WindowedWrapper(env, window_size=10)  # 20 * 10 = 200-dim
 
 # Or use decaying traces for eligibility-trace-style accumulation
-env = gym.make("SecurityLogStream-v0", db_path="data/events.db")
+env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db")
 env = DecayingTraceWrapper(env, lambda_=0.95)
 ```
 
 ### ANSI Rendering
 
 ```python
-env = gym.make("SecurityLogStream-v0", db_path="data/events.db", render_mode="ansi")
+env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db", render_mode="ansi")
 obs, info = env.reset()
 for _ in range(20):
     obs, reward, terminated, truncated, info = env.step(0)
@@ -147,7 +148,7 @@ For direct integration with learning frameworks (bypasses Gymnasium overhead):
 ```python
 from security_gym.adapters.scan_stream import SecurityGymStream
 
-stream = SecurityGymStream("data/events.db", feature_mode="event")
+stream = SecurityGymStream("data/campaigns.db", feature_mode="event")
 
 # Batch: load everything into arrays
 obs, targets = stream.collect_numpy()        # (N, 24), (N, 5)
@@ -161,7 +162,7 @@ for obs_batch, tgt_batch in stream.iter_batches(size=1000):
 obs_jax, tgt_jax = stream.collect()          # jnp.ndarray if JAX available
 
 # Server-speed evaluation mode
-stream = SecurityGymStream("data/events.db", speed=10.0, loop=True)
+stream = SecurityGymStream("data/campaigns.db", speed=10.0, loop=True)
 for timestep in stream:  # Never-ending, 10x realtime pacing
     ...
 ```
