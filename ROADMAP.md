@@ -18,23 +18,21 @@ syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim)
 
 YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`). 49 tests passing.
 
-## Phase 5 — Data Collection 🔄
+## Phase 5 — Data Collection ✅
 
 Generate labeled attack datasets by running campaigns against the Isildur VM.
 
-**Completed:**
 - Isildur VM fully configured (researcher user, SSH key auth, NOPASSWD sudo for ausearch)
 - PasswordAuthentication enabled for brute force module
 - Docker stack deployed (Log4Shell on :8080, Nginx reverse proxy on :80)
-- All log sources verified readable
-
-**Remaining:**
-- Run SSH brute force campaign
-- Run Log4Shell campaign
-- Run recon (port scan) campaign
-- Collect and label logs via SSH/SFTP
-- Validate labeled data in EventStore
-- Publish dataset
+- All log sources verified readable (auth_log, syslog, nginx access/error, journal)
+- LogCollector auto-detects target timezone via SSH (`date +%z`), corrects BSD syslog timestamps
+- SSH brute force campaign: 1,124 events (230 malicious, 894 benign)
+- Log4Shell campaign: 169 events (151 malicious, 18 benign)
+- Recon SYN scan campaign: 712 events (19 malicious, 693 benign)
+- Combined 3-phase campaign (recon → SSH → Log4Shell): 1,029 events (868 malicious, 161 benign)
+- Dataset published to GitHub Releases (`data-v1`) and Zenodo (DOI: 10.5281/zenodo.18810299)
+- `security-gym` CLI for dataset download (`security-gym download`, `security-gym list`)
 
 ## Phase 6 — Experiments (Future)
 
