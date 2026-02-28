@@ -4,15 +4,25 @@ Current action items for security-gym development.
 
 ## Phase 5 — Data Collection
 
-- [ ] Run SSH brute force campaign against Isildur (`campaigns/ssh_brute_only.yaml`)
-- [ ] Run Log4Shell campaign against Isildur
-- [ ] Run recon (SYN scan) campaign against Isildur
-- [ ] Run combined multi-phase campaign
-- [ ] Collect logs from Isildur via SSH/SFTP (LogCollector)
-- [ ] Label collected logs with CampaignLabeler (time+IP matching)
+- [x] Run SSH brute force campaign against Isildur (`campaigns/ssh_brute_only.yaml`)
+- [x] Run Log4Shell campaign against Isildur (`campaigns/log4shell_only.yaml`)
+- [x] Run recon (SYN scan) campaign against Isildur (`campaigns/recon_only.yaml`)
+- [x] Run combined multi-phase campaign (`campaigns/recon_ssh_log4shell.yaml`)
+- [x] Collect logs from Isildur via SSH/SFTP (LogCollector)
+- [x] Label collected logs with CampaignLabeler (time+IP matching)
 - [ ] Validate labeled data in EventStore — spot-check label accuracy
-- [ ] Verify auditd ground truth matches campaign execution windows
-- [ ] Publish dataset to `data/` (or external host)
+- [ ] Verify auditd ground truth matches campaign execution windows (auditd currently timing out via paramiko)
+- [x] Publish dataset to GitHub Releases and Zenodo (DOI: 10.5281/zenodo.18810299)
+
+## Bugs Fixed (2026-02-27)
+
+- [x] Move pyyaml from attacks extra to core dependencies (StreamComposer import)
+- [x] Fix BSD syslog timestamp year inference in log collector
+- [x] Fix timezone mismatch — collector now auto-detects target UTC offset via `date +%z`
+- [x] Fix timezone over-correction for web_access/web_error parsers (only adjust BSD syslog parsers)
+- [x] Route Log4Shell campaigns through nginx (:80) instead of direct (:8080)
+- [x] Use `sudo -n` for ausearch in campaign configs (prevent paramiko TTY hang)
+- [x] Set channel timeout on paramiko stdout/stderr reads
 
 ## Phase 6 — Experiments
 
@@ -31,4 +41,8 @@ Current action items for security-gym development.
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios
+- [x] Comprehensive README with quick start, feature docs, dataset download
+- [x] `security-gym` CLI for dataset download from GitHub Releases
+- [x] Zenodo DOI badge and archive
 - [ ] Document dataset schema and labeling methodology
+- [ ] Investigate auditd timeout through paramiko (2-minute hang on `ausearch --raw`)
