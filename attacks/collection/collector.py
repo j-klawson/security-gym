@@ -121,6 +121,11 @@ class LogCollector:
         elif source.remote_command:
             yield from self._collect_command(source)
 
+    # Parsers that produce BSD syslog timestamps (local time without timezone).
+    # These need offset correction; other parsers (web_access, web_error, journal)
+    # either include timezone info or use epoch timestamps.
+    _BSD_SYSLOG_PARSERS = frozenset({"auth_log", "syslog"})
+
     def _collect_file(self, source: LogSourceConfig) -> Iterator[ParsedEvent]:
         """Download and parse a remote log file."""
         assert self._sftp is not None
@@ -131,9 +136,15 @@ class LogCollector:
 
         # BSD syslog timestamps are local time with no timezone info.
         # The parser assumes UTC, so we convert our UTC window to the
-        # target's local time for correct comparison.
-        local_start = self.start_time + self._target_tz_offset
-        local_end = self.end_time + self._target_tz_offset
+        # target's local time for correct comparison, then fix the
+        # timestamps back to real UTC after matching.
+        needs_tz_fix = source.parser in self._BSD_SYSLOG_PARSERS
+        if needs_tz_fix:
+            window_start = self.start_time + self._target_tz_offset
+            window_end = self.end_time + self._target_tz_offset
+        else:
+            window_start = self.start_time
+            window_end = self.end_time
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as tmp:
             tmp_path = Path(tmp.name)
@@ -143,10 +154,10 @@ class LogCollector:
             self._sftp.get(source.remote_path, str(tmp_path))
 
             for event in parser.parse_file(tmp_path):
-                # Filter to campaign time window (in target-local time)
-                if local_start <= event.timestamp <= local_end:
-                    # Convert from pseudo-UTC (actually local) to real UTC
-                    event.timestamp = event.timestamp - self._target_tz_offset
+                if window_start <= event.timestamp <= window_end:
+                    if needs_tz_fix:
+                        # Convert from pseudo-UTC (actually local) to real UTC
+                        event.timestamp = event.timestamp - self._target_tz_offset
                     yield event
         finally:
             tmp_path.unlink(missing_ok=True)
@@ -166,6 +177,8 @@ class LogCollector:
 
         logger.debug("Running remote command: %s", cmd)
         _, stdout, stderr = self._client.exec_command(cmd, timeout=120)
+        stdout.channel.settimeout(120)
+        stderr.channel.settimeout(120)
         output = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
 

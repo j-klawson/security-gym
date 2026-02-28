@@ -13,6 +13,21 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 - **Attack framework** — YAML-driven campaign orchestrator with SSH brute force, Log4Shell, and port scan modules
 - **Stream composition** — offline mixing of benign + attack data with Poisson-scheduled campaigns and MITRE ATT&CK-weighted type distributions
 
+## Supported Attacks
+
+| Attack Type | Module | MITRE Technique | MITRE Tactic | Description |
+|---|---|---|---|---|
+| `discovery` | `recon` | [T1046](https://attack.mitre.org/techniques/T1046/) — Network Service Discovery | TA0007 — Discovery | SYN port scan via scapy raw sockets |
+| `brute_force` | `ssh_brute_force` | [T1110.001](https://attack.mitre.org/techniques/T1110/001/) — Password Guessing | TA0006 — Credential Access | SSH password brute force via paramiko with IP aliasing |
+| `web_exploit` | `log4shell` | [T1190](https://attack.mitre.org/techniques/T1190/) — Exploit Public-Facing Application | TA0001 — Initial Access | Log4Shell (CVE-2021-44228) JNDI injection via HTTP |
+| `credential_stuffing` | — | [T1110.004](https://attack.mitre.org/techniques/T1110/004/) — Credential Stuffing | TA0006 — Credential Access | Planned |
+| `execution` | — | [T1059](https://attack.mitre.org/techniques/T1059/) — Command and Scripting Interpreter | TA0002 — Execution | Planned |
+| `persistence` | — | — | TA0003 — Persistence | Planned |
+| `privilege_escalation` | — | — | TA0004 — Privilege Escalation | Planned |
+| `exfiltration` | — | — | TA0010 — Exfiltration | Planned |
+
+The first three attacks have implemented modules and campaign configs. The remaining five are defined in the target taxonomy (Head 1 of the multi-head target system) for future expansion.
+
 ## Install
 
 ```bash
