@@ -8,7 +8,7 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 
 - `src/security_gym/` — installable package (`pip install -e .`)
 - `attacks/` — attack scripts for data generation (NOT pip-installed)
-- `campaigns/` — YAML campaign configs for Isildur (ssh_brute_only, log4shell_only, recon_only, recon_ssh_log4shell)
+- `campaigns/` — YAML campaign configs for Isildur (ssh_brute_only, log4shell_only, recon_only, recon_ssh_log4shell, credential_stuffing_only, post_auth_only, full_killchain)
 - `configs/` — YAML composition configs for StreamComposer (stream_90d_mixed, stream_7d_brute_only, stream_30d_heavy)
 - `server/` — target VM provisioning docs and Docker Compose for vulnerable services
 - `data/` — runtime data directory (gitignored)
@@ -25,7 +25,7 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 - **Adapter**: `SecurityGymStream` reads EventStore directly (bypasses gym overhead), provides `collect_numpy()`/`collect()` for batch learning and `iter_batches()` for constant-memory streaming. JAX optional — `collect_numpy()` always works. Supports `speed` (0=full, 1.0=realtime, 10.0=10x) and `loop` (never-ending wrap-around) parameters for server-speed evaluation mode; batch methods always run single-pass at full speed.
 - **StreamComposer**: offline composition of benign + attack EventStore DBs into experiment streams (`data/composer.py`). YAML config specifies duration, seed, Poisson attack schedule (`campaigns_per_day`), and MITRE ATT&CK-weighted type distribution. Cycles benign events to fill duration, transplants attack sessions preserving intra-session timing. Deterministic given seed. CLI: `python -m attacks compose configs/stream_90d_mixed.yaml [--dry-run]`.
 - **Registration**: belt+suspenders — `__init__.py` calls `register_envs()` on import AND `pyproject.toml` entry point for auto-discovery
-- **Attack Modules**: decorator-based registry (`@AttackModuleRegistry.register('ssh_brute_force')`); three modules: `recon` (scapy SYN scan), `ssh_brute_force` (paramiko), `log4shell` (requests + JNDI injection). Non-stationary `TimingProfile` with constant/accelerating/decelerating/custom profiles.
+- **Attack Modules**: decorator-based registry (`@AttackModuleRegistry.register('ssh_brute_force')`); five modules: `recon` (scapy SYN scan), `ssh_brute_force` (paramiko), `log4shell` (requests + JNDI injection), `credential_stuffing` (paramiko, unique cred pairs tried once each), `ssh_post_auth` (paramiko, post-auth command execution with 4 command profiles + optional payload download). Non-stationary `TimingProfile` with constant/accelerating/decelerating/custom profiles. Full kill chain campaign: recon → credential stuffing → post-auth execution.
 - **Campaign Framework**: YAML-driven orchestrator — load config → execute phases → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules/compose`.
 - **CI**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main
 

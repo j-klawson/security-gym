@@ -13,7 +13,7 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 - **Multi-head targets** — 5 prediction heads (malicious?, attack type, attack stage, severity, session value) with NaN masking for inactive heads
 - **Three feature modes** — event (24-dim one-hot/cyclic), hashed (configurable MurmurHash3), session (20-dim with per-session state tracking)
 - **Composable wrappers** — `HashedFeatureWrapper`, `SessionAggregationWrapper`, `WindowedWrapper`, `DecayingTraceWrapper`
-- **Attack framework** — YAML-driven campaign orchestrator with SSH brute force, Log4Shell, and port scan modules
+- **Attack framework** — YAML-driven campaign orchestrator with 5 modules: SSH brute force, credential stuffing, Log4Shell, port scan, post-auth execution
 - **Stream composition** — offline mixing of benign + attack data with Poisson-scheduled campaigns and MITRE ATT&CK-weighted type distributions
 
 ## Supported Attacks
@@ -23,13 +23,13 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 | `discovery` | `recon` | [T1046](https://attack.mitre.org/techniques/T1046/) — Network Service Discovery | TA0007 — Discovery | SYN port scan via scapy raw sockets |
 | `brute_force` | `ssh_brute_force` | [T1110.001](https://attack.mitre.org/techniques/T1110/001/) — Password Guessing | TA0006 — Credential Access | SSH password brute force via paramiko with IP aliasing |
 | `web_exploit` | `log4shell` | [T1190](https://attack.mitre.org/techniques/T1190/) — Exploit Public-Facing Application | TA0001 — Initial Access | Log4Shell (CVE-2021-44228) JNDI injection via HTTP |
-| `credential_stuffing` | — | [T1110.004](https://attack.mitre.org/techniques/T1110/004/) — Credential Stuffing | TA0006 — Credential Access | Planned |
-| `execution` | — | [T1059](https://attack.mitre.org/techniques/T1059/) — Command and Scripting Interpreter | TA0002 — Execution | Planned |
+| `credential_stuffing` | `credential_stuffing` | [T1110.004](https://attack.mitre.org/techniques/T1110/004/) — Credential Stuffing | TA0006 — Credential Access | Breach dump credentials, each tried once via SSH |
+| `execution` | `ssh_post_auth` | [T1059.004](https://attack.mitre.org/techniques/T1059/004/) — Unix Shell | TA0002 — Execution | Post-auth command execution + optional payload download |
 | `persistence` | — | — | TA0003 — Persistence | Planned |
 | `privilege_escalation` | — | — | TA0004 — Privilege Escalation | Planned |
 | `exfiltration` | — | — | TA0010 — Exfiltration | Planned |
 
-The first three attacks have implemented modules and campaign configs. The remaining five are defined in the target taxonomy (Head 1 of the multi-head target system) for future expansion.
+The first five attacks have implemented modules and campaign configs (including a full kill chain campaign: recon -> credential stuffing -> post-auth execution). The remaining three are defined in the target taxonomy (Head 1 of the multi-head target system) for future expansion.
 
 ## Install
 
@@ -283,7 +283,7 @@ security-gym/
 │   ├── parsers/               # auth_log, syslog, web_access, web_error, journal
 │   └── targets/               # Multi-head target builder
 ├── attacks/                   # Attack framework (NOT pip-installed)
-│   ├── modules/               # ssh_brute_force, log4shell, recon
+│   ├── modules/               # recon, ssh_brute_force, credential_stuffing, ssh_post_auth, log4shell
 │   ├── collection/            # SSH/SFTP log collector, benign log importer
 │   ├── labeling/              # Time+IP campaign labeler
 │   └── tests/                 # Attack framework tests

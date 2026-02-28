@@ -24,6 +24,14 @@ Current action items for security-gym development.
 - [x] Use `sudo -n` for ausearch in campaign configs (prevent paramiko TTY hang)
 - [x] Set channel timeout on paramiko stdout/stderr reads
 
+## Phase 5b — New Attack Campaigns
+
+- [ ] Set password for researcher account on Isildur (or create test user) for post-auth module
+- [ ] Run credential stuffing campaign (`campaigns/credential_stuffing_only.yaml`)
+- [ ] Run post-auth execution campaign (`campaigns/post_auth_only.yaml`)
+- [ ] Run full kill chain campaign (`campaigns/full_killchain.yaml`)
+- [ ] Re-compose experiment streams with new attack types (credential_stuffing + execution data)
+
 ## Phase 6 — Experiments
 
 - [ ] Wire SecurityGymStream into alberta-framework's `run_multi_head_learning_loop()`
@@ -31,6 +39,7 @@ Current action items for security-gym development.
 - [ ] Run IDBD and Autostep comparisons
 - [ ] Compare feature representations (event vs. hashed vs. session)
 - [ ] Evaluate wrapper combinations (Windowed, DecayingTrace)
+- [ ] Kill chain experiment: measure cross-phase predictive relationships
 
 ## Phase 7 — Streaming Server (Future)
 

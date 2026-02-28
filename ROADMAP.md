@@ -16,7 +16,7 @@ syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim)
 
 ## Phase 4 — Attack Scripts ✅
 
-YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`). 49 tests passing.
+YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell/credential_stuffing/ssh_post_auth), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`). 5 attack modules covering 6 MITRE ATT&CK tactics (Reconnaissance, Credential Access, Initial Access, Execution, Discovery, Command and Control) with full kill chain campaign support.
 
 ## Phase 5 — Data Collection ✅
 
@@ -38,11 +38,13 @@ Generate labeled attack datasets by running campaigns against the Isildur VM.
 
 Connect security-gym to alberta-framework and run continual learning experiments.
 
+- Run new campaigns: credential stuffing, post-auth execution, full kill chain
 - Feed SecurityGymStream into MultiHeadMLPLearner
 - Compare IDBD / Autostep / LMS optimizers on security log data
 - Evaluate session vs. event vs. hashed feature representations
 - Benchmark against chronos-sec honeypot results
 - Non-stationarity analysis (concept drift across campaign phases)
+- Kill chain cross-phase prediction: can agents learn that recon predicts execution?
 
 ## Phase 7 — Streaming Server (Future)
 
