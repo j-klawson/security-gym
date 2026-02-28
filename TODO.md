@@ -26,11 +26,16 @@ Current action items for security-gym development.
 
 ## Phase 5b — New Attack Campaigns
 
-- [ ] Set password for researcher account on Isildur (or create test user) for post-auth module
-- [ ] Run credential stuffing campaign (`campaigns/credential_stuffing_only.yaml`)
-- [ ] Run post-auth execution campaign (`campaigns/post_auth_only.yaml`)
-- [ ] Run full kill chain campaign (`campaigns/full_killchain.yaml`)
-- [ ] Re-compose experiment streams with new attack types (credential_stuffing + execution data)
+- [x] Set password for researcher account on Isildur for post-auth module
+- [x] Run credential stuffing campaign: 361 events (197 malicious)
+- [x] Run post-auth execution campaign: 591 events (237 malicious)
+- [x] Run full kill chain campaign: 1,156 events (562 malicious)
+- [x] Import benign logs from 3 servers into `data/benign.db` (1.45M events)
+- [x] Scrub identifying hostnames/domains/emails from benign.db and campaigns.db
+- [x] Fix composition config DB paths (relative to config parent dir: `../data/`)
+- [x] Add 365-day realistic internet-facing server composition config
+- [x] Re-compose all experiment streams with new attack types and scrubbed data
+- [ ] Publish updated dataset to GitHub Releases (v0.2.0-data: campaigns.db + benign.db)
 
 ## Phase 6 — Experiments
 

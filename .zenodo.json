@@ -1,0 +1,34 @@
+{
+  "title": "Security Gym: Gymnasium Environments for Cybersecurity Threat Detection with Continual Learning",
+  "description": "Gymnasium-compatible environment that replays labeled Linux log streams for continual learning research. Scripted attacks mixed with real server traffic produce ground-truth-labeled data with multi-head prediction targets. Built for the Alberta Plan vision of long-lived agents that continually learn from non-stationary sensory streams.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "creators": [
+    {
+      "name": "Lawson, Keith",
+      "affiliation": ""
+    }
+  ],
+  "keywords": [
+    "gymnasium",
+    "cybersecurity",
+    "continual learning",
+    "reinforcement learning",
+    "intrusion detection",
+    "log analysis",
+    "Alberta Plan"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/j-klawson/security-gym",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://arxiv.org/abs/2208.11173",
+      "relation": "references",
+      "scheme": "url"
+    }
+  ]
+}

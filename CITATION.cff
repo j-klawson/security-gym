@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "Security Gym"
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+authors:
+  - family-names: Lawson
+    given-names: Keith
+repository-code: "https://github.com/j-klawson/security-gym"
+url: "https://github.com/j-klawson/security-gym"
+license: Apache-2.0
+version: "0.2.0"
+date-released: "2026-02-28"
+doi: "10.5281/zenodo.18810299"
+keywords:
+  - gymnasium
+  - cybersecurity
+  - continual learning
+  - reinforcement learning
+  - intrusion detection
+  - log analysis
+  - Alberta Plan
+abstract: >-
+  Gymnasium-compatible environment that replays labeled Linux log streams
+  for continual learning research. Scripted attacks mixed with real server
+  traffic produce ground-truth-labeled data — no episodes, no resets, just
+  a continuous stream of observations and multi-head prediction targets.
+  Built for the Alberta Plan vision of long-lived agents that continually
+  learn from non-stationary sensory streams.

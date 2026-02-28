@@ -22,8 +22,7 @@ YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistr
 
 Generate labeled attack datasets by running campaigns against the Isildur VM.
 
-- Isildur VM fully configured (researcher user, SSH key auth, NOPASSWD sudo for ausearch)
-- PasswordAuthentication enabled for brute force module
+- Isildur VM fully configured (researcher user, SSH key + password auth, NOPASSWD sudo for ausearch)
 - Docker stack deployed (Log4Shell on :8080, Nginx reverse proxy on :80)
 - All log sources verified readable (auth_log, syslog, nginx access/error, journal)
 - LogCollector auto-detects target timezone via SSH (`date +%z`), corrects BSD syslog timestamps
@@ -31,14 +30,18 @@ Generate labeled attack datasets by running campaigns against the Isildur VM.
 - Log4Shell campaign: 169 events (151 malicious, 18 benign)
 - Recon SYN scan campaign: 712 events (19 malicious, 693 benign)
 - Combined 3-phase campaign (recon → SSH → Log4Shell): 1,029 events (868 malicious, 161 benign)
-- Dataset published to GitHub Releases (`data-v1`) and Zenodo (DOI: 10.5281/zenodo.18810299)
+- Credential stuffing campaign: 361 events (197 malicious, 164 benign)
+- Post-auth execution campaign: 591 events (237 malicious, 354 benign)
+- Full kill chain campaign (recon → cred stuffing → post-auth): 1,156 events (562 malicious, 594 benign)
+- Benign DB imported from 3 servers (1.45M events), scrubbed of identifying hostnames/domains/emails
+- Experiment streams composed: 7d brute-only, 30d heavy, 90d mixed, 365d realistic (136k events, 897 campaigns)
+- Dataset published to GitHub Releases and Zenodo (DOI: 10.5281/zenodo.18810299)
 - `security-gym` CLI for dataset download (`security-gym download`, `security-gym list`)
 
 ## Phase 6 — Experiments (Future)
 
 Connect security-gym to alberta-framework and run continual learning experiments.
 
-- Run new campaigns: credential stuffing, post-auth execution, full kill chain
 - Feed SecurityGymStream into MultiHeadMLPLearner
 - Compare IDBD / Autostep / LMS optimizers on security log data
 - Evaluate session vs. event vs. hashed feature representations
