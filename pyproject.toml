@@ -37,6 +37,9 @@ Homepage = "https://github.com/j-klawson/security-gym"
 Documentation = "https://j-klawson.github.io/security-gym"
 Repository = "https://github.com/j-klawson/security-gym"
 
+[project.scripts]
+security-gym = "security_gym.scripts.download:main"
+
 [project.entry-points."gymnasium.envs"]
 __root__ = "security_gym.envs:register_envs"
 

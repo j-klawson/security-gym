@@ -1,5 +1,7 @@
 # security-gym
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18810299.svg)](https://doi.org/10.5281/zenodo.18810299)
+
 Gymnasium-compatible environment that replays labeled Linux log streams for continual learning research. Scripted attacks mixed with real server traffic produce ground-truth-labeled data — no episodes, no resets, just a continuous stream of observations and multi-head prediction targets.
 
 Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-lived agents that continually learn from non-stationary sensory streams.
@@ -49,6 +51,22 @@ pip install -e ".[alberta]"   # JAX + alberta-framework for RL experiments
 pip install -e ".[attacks]"   # paramiko, requests, scapy for attack generation
 pip install -e ".[all]"       # Everything
 ```
+
+## Dataset
+
+Pre-built datasets (SQLite databases with labeled log events) are available from [GitHub Releases](https://github.com/j-klawson/security-gym/releases) and archived on [Zenodo](https://doi.org/10.5281/zenodo.18810299).
+
+Download the latest dataset:
+
+```bash
+# Via CLI (after pip install)
+security-gym download
+
+# Or list available releases first
+security-gym list
+```
+
+Or manually download from the [Releases page](https://github.com/j-klawson/security-gym/releases) and place `.db` files in `data/`.
 
 ## Quick Start
 
