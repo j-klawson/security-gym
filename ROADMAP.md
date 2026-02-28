@@ -49,6 +49,30 @@ Connect security-gym to alberta-framework and run continual learning experiments
 - Non-stationarity analysis (concept drift across campaign phases)
 - Kill chain cross-phase prediction: can agents learn that recon predicts execution?
 
+## Open Design Question — Attack Type Encoding
+
+The attack_type head (Head 1) currently uses **ordinal compression**: 8 categorical types mapped to a single float in [0, 1] via `index / 7`. This creates a false distance metric — MSE loss treats brute_force→credential_stuffing (error 0.02) as a smaller mistake than brute_force→exfiltration (error 1.0), even though these are unrelated categories. In practice, ObGD gradient capping and strong shared-trunk features mitigate this, but it's architecturally unsound.
+
+The problem deepens at MITRE ATT&CK scale. The current 8-type taxonomy is a simplified subset; the full framework has ~200 techniques across 14 tactics, and grows with each ATT&CK release. Any encoding must handle this scale and remain stable as new techniques are added.
+
+### Options
+
+1. **One-hot (N neurons, cross-entropy loss)** — Standard classification. Clean separation, no false distances. But 200+ output neurons is expensive, every new technique requires retraining the output layer, and the encoding carries zero information about technique relationships.
+
+2. **Learned embeddings (fixed-dim vector per technique)** — Each technique gets a dense vector (e.g., 16-dim) learned during training. Techniques with similar behavioral signatures converge to nearby embeddings. Scales better than one-hot, but still requires a growing lookup table and retraining when new techniques appear.
+
+3. **Hierarchical encoding (tactic + technique, two heads)** — Encode MITRE tactic (14 categories) and technique-within-tactic separately. Mirrors ATT&CK's own structure. Tactically meaningful — confusing two techniques within the same tactic is a smaller error than confusing tactics. Scales to new techniques within existing tactics without changing the tactic head.
+
+4. **Property-based encoding (behavioral features, not IDs)** — Encode observable attack *properties* rather than technique identity: network vs. host, lateral vs. vertical, noisy vs. stealthy, automated vs. manual, pre-auth vs. post-auth, etc. Fixed-dimension output regardless of technique count. A novel technique the agent has never seen still has recognizable properties. Most aligned with how human analysts think and with continual learning goals (generalization over memorization).
+
+### Note: attack_stage is intentionally ordinal
+
+Unlike attack_type, the attack_stage head (Head 2) has genuine sequential structure — the kill chain is a real progression (recon → initial_access → execution → persistence → exfiltration). Confusing adjacent stages is a smaller conceptual error than confusing distant ones, so the ordinal encoding's distance metric is meaningful here rather than arbitrary. Attackers can skip stages (e.g., stolen credentials → straight to post-auth host recon), but skipping stages doesn't break the ordering — it just means not every attack traverses every stage. Stages are assigned per-event based on campaign phase, so parallel kill chains (recon on host A while exfiltrating from host B) are already handled correctly.
+
+### Current Decision
+
+Keep ordinal compression for Phase 6 experiments. The 8-type taxonomy is a stepping stone; investing in one-hot now is throwaway work if the eventual answer is option 3 or 4. The ordinal baseline also provides a comparison point for whatever encoding replaces it. Revisit before Phase 8 (NetFlow) when the attack taxonomy will need to expand.
+
 ## Phase 7 — Streaming Server (Future)
 
 Internet-facing service that serves composed streams to remote agents. Wraps SecurityGymStream with a network protocol (gRPC/WebSocket), authentication, and rate limiting. Enables multiple researchers and agents to consume the same composed stream without local DB access.

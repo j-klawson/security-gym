@@ -66,5 +66,13 @@ ignore_missing_imports = true
 module = ["scapy.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "jax"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "jax.*"
+ignore_missing_imports = true
+
 [tool.bandit]
 exclude_dirs = ["tests"]

@@ -14,17 +14,26 @@ GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 DEFAULT_DATA_DIR = Path("data")
 
 
+def _safe_urlopen(req: urllib.request.Request | str, **kwargs):  # noqa: ANN003
+    """Open a URL after verifying it uses HTTPS."""
+    url = req.full_url if isinstance(req, urllib.request.Request) else req
+    if not url.startswith("https://"):
+        raise ValueError(f"Only HTTPS URLs are allowed, got: {url}")
+    return urllib.request.urlopen(req, **kwargs)  # nosec B310
+
+
 def _get_releases() -> list[dict]:
     """Fetch release metadata from GitHub API."""
     req = urllib.request.Request(GITHUB_API, headers={"Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    with _safe_urlopen(req, timeout=30) as resp:
+        result: list[dict] = json.loads(resp.read())
+        return result
 
 
 def _download_file(url: str, dest: Path, name: str) -> None:
     """Download a file with progress reporting."""
     req = urllib.request.Request(url, headers={"Accept": "application/octet-stream"})
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    with _safe_urlopen(req, timeout=300) as resp:
         total = int(resp.headers.get("Content-Length", 0))
         downloaded = 0
         block_size = 1024 * 1024  # 1MB

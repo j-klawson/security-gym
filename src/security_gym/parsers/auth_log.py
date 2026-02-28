@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from security_gym.parsers._syslog_header import parse_syslog_header
 from security_gym.parsers.base import ParsedEvent, Parser
@@ -95,7 +96,7 @@ class AuthLogParser(Parser):
                 port = int(port_str) if port_str else None
                 session_id = f"{ip}:{port}" if ip and port else None
 
-                fields = {"message": header.message, "pattern": pattern_name}
+                fields: dict[str, Any] = {"message": header.message, "pattern": pattern_name}
                 if "publickey" in pattern_name:
                     fields["auth_method"] = "publickey"
                 elif "password" in pattern_name:

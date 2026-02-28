@@ -168,7 +168,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
             store = self._ensure_store()
             n = store.count_events()
             if n > 0:
-                self._cursor = self.np_random.integers(0, n)
+                self._cursor = int(self.np_random.integers(0, n))
             else:
                 self._cursor = 0
         else:
