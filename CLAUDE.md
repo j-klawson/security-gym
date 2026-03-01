@@ -24,7 +24,7 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
   - **Reward**: asymmetric action costs (block benign = -1.0, block attacker = +1.0, pass benign = 0.0) + risk score MSE + ongoing consequence feedback from blocked/throttled events.
   - **Defense state**: blocklist (100% drop), throttle list (90% drop), isolation mode (blocks all network events). Agent can escalate/de-escalate: throttle → block → unblock.
   - **Continuous stream**: `terminated=False` always, `truncated=True` at end of data.
-- **eBPF Collector**: `server/ebpf_collector.py` — BCC daemon attaching to kernel tracepoints (execve, connect, accept, openat, unlinkat). Deployed on Isildur. Output: timestamped text lines. Self-PID filtering to avoid feedback loops. Orchestration wrapper: `attacks/collection/ebpf_collector.py`.
+- **eBPF Collector**: `server/ebpf_collector.py` — BCC daemon attaching to kernel tracepoints (execve, connect, accept, openat, unlinkat). Deployed on Isildur (Debian 11, kernel 5.10, BCC 0.18). Output: timestamped text lines with enriched fields — process events include `ppid` + `parent_comm` (via `task->real_parent`), network events include `uid`. Self-PID filtering to avoid feedback loops. Orchestration wrapper: `attacks/collection/ebpf_collector.py` (paramiko Ed25519 SSH transport with keepalive).
 - **Adapter**: `SecurityGymStream` reads EventStore directly, maintains ring buffers per channel (same as env), yields text observations + ground truth dicts. Supports `speed` (0=full, 1.0=realtime, 10.0=10x) and `loop` (never-ending wrap-around) parameters.
 - **StreamComposer**: offline composition of benign + attack EventStore DBs into experiment streams (`data/composer.py`). Handles both log and eBPF events (all use same events table). YAML config specifies duration, seed, Poisson attack schedule (`campaigns_per_day`), and MITRE ATT&CK-weighted type distribution. Cycles benign events to fill duration, transplants attack sessions preserving intra-session timing. Deterministic given seed.
 - **Registration**: belt+suspenders — `__init__.py` calls `register_envs()` on import AND `pyproject.toml` entry point for auto-discovery
@@ -54,6 +54,8 @@ python -m attacks compose configs/stream_90d_mixed.yaml --dry-run  # Preview com
 python scripts/validate_labels.py data/campaigns.db -v            # Validate label accuracy
 python scripts/validate_labels.py data/exp01_90d.db --spot-check 20  # Spot-check composed stream
 python scripts/collect_ebpf_baseline.py --duration 3600            # Collect benign eBPF baseline
+python scripts/insert_ebpf_baseline.py /tmp/ebpf_baseline.log      # Insert manual eBPF baseline
+sudo ./scripts/run_all_campaigns.sh                                # Run all 7 campaigns (needs sudo for IP aliasing)
 python -m build                   # Build wheel
 ```
 
@@ -64,7 +66,7 @@ python -m build                   # Build wheel
 - **Services:** Log4Shell (CVE-2021-44228) on :8080 (`ghcr.io/christophetd/log4shell-vulnerable-app`), Nginx 1.21.0 reverse proxy on :80, SSH on :22
 - **Users:** `researcher` (adm, systemd-journal groups) for log collection via SSH key `~/.ssh/isildur_research`, password auth enabled for attack modules; `keith` (sudo, docker groups) for administration
 - **Log sources:** auth.log, syslog, nginx access/error logs, journalctl, Docker JSON logs
-- **eBPF:** BCC-based kernel event collection (requires `bpfcc-tools python3-bpfcc linux-headers`). Collector daemon at `server/ebpf_collector.py`.
+- **eBPF:** BCC 0.18 installed (manual .deb for kernel 5.10). Collector daemon at `server/ebpf_collector.py`. Sudoers rules grant researcher NOPASSWD for collector, pkill, python3.
 - **Ground truth:** auditd rules track wget/curl/sh/bash execution with `research_exploit` key; researcher has NOPASSWD sudo for `ausearch`
 - **Snapshots:** `ISILDUR_READY_V1` golden state on Frodo; `ISILDUR_READY_V2` after BCC install + eBPF sudoers (see `server/BUILD.md` section 5)
 

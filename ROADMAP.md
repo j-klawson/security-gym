@@ -100,17 +100,42 @@ Hook the RL agent directly into the Linux kernel for real-time observation of sy
 - [x] Benign eBPF baseline collection script (`scripts/collect_ebpf_baseline.py`)
 - [x] BUILD.md updated with BCC install, sudoers, V2 snapshot procedure
 - [x] Composition configs updated for v2 databases (benign_v2.db, campaigns_v2.db)
-- [ ] Install BCC on Isildur and create ISILDUR_READY_V2 snapshot
-- [ ] Collect benign eBPF baseline (~1 hour)
-- [ ] Re-run all campaigns with eBPF collection enabled
+- [x] Install BCC on Isildur (manual .deb install for kernel 5.10)
+- [x] Sudoers rules for researcher (eBPF collector, pkill, python3)
+- [x] Fix BPF compilation for Debian 11 / BCC 0.18 (kernel includes, `bpf_probe_read_kernel` for task_struct)
+- [x] Fix orchestrator: Ed25519 key, sudo/nohup ordering, SSH transport keepalive
+- [x] Collect benign eBPF baseline (997 events from ~1 hour manual collection)
+- [ ] Re-run all campaigns with eBPF collection (needs `sudo` for IP aliasing)
+- [ ] Create ISILDUR_READY_V2 snapshot on Frodo
 - [ ] Re-compose experiment streams from v2 databases
 - [ ] Validate v2 label accuracy
-- Enrich eBPF event lines: PPID + parent_comm on process events, UID on network events
+- [x] Enrich eBPF event lines: PPID + parent_comm on process events, UID on network events
+- Extended 24-hour benign eBPF baseline from Isildur (capture cron jobs, log rotation, Docker health checks, diurnal patterns) with synthetic benign traffic (legitimate SSH sessions, web browsing through nginx)
 - Periodic kernel state summary as text (active PIDs, open sockets, privileged process count, new procs/conns per window) — injected into the event stream as a text line, not structured numerics, so the agent learns its own encoding. Revisit after Phase 6 baselines show whether the agent struggles with event-rate signals in raw text.
 - Attack campaigns that generate kernel-level telemetry (privilege escalation, rootkits, fileless malware)
 - Real-time streaming from kernel to agent (low-latency path, not log-based)
 - Integration with existing log + NetFlow streams for multi-modal observation
 - Evaluate agent performance on kernel events vs. log-only vs. combined
+
+## PyPI Publication
+
+Publish `security-gym` to PyPI as a `0.x` alpha package (API may change). Packaging audit completed — source code and config are ready, only build artifacts need refreshing.
+
+**Already done:**
+- `pyproject.toml` metadata (description, classifiers, license, keywords, URLs)
+- Hatch build config targets `src/security_gym` only (attacks/server/scripts excluded from wheel)
+- CLI entry point (`security-gym` → download/list commands)
+- Gymnasium env auto-registration via entry point
+- Optional dependency extras (alberta, attacks, collection, dev, all)
+- No hardcoded paths — all defaults overridable
+
+**Remaining steps:**
+- [ ] Add `src/security_gym/py.typed` marker (empty file for type checker discovery)
+- [ ] Delete stale `dist/` (v0.1.0 wheels, missing 9 source files added since)
+- [ ] Bump version if needed (`git tag --sort=-v:refname | head -5` to check)
+- [ ] Rebuild: `python -m build`
+- [ ] Test install from wheel in clean venv, verify imports + CLI + `gym.make()`
+- [ ] Publish to TestPyPI first, then PyPI
 
 ## Phase 10 — Analysis & Publication (Future)
 

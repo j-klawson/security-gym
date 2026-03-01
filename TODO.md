@@ -45,11 +45,16 @@ Current action items for security-gym development.
 - [x] Update all 4 composition configs to read from `benign_v2.db` and `campaigns_v2.db`
 - [x] Document BCC install, sudoers, and V2 snapshot in `server/BUILD.md`
 - [x] Create `scripts/collect_ebpf_baseline.py` for benign eBPF baseline collection
-- [ ] Install BCC on Isildur (`sudo apt install bpfcc-tools python3-bpfcc linux-headers-$(uname -r)`)
-- [ ] Add sudoers rules for researcher (eBPF collector + pkill)
+- [x] Install BCC on Isildur (manual .deb install — `bpfcc-tools`, `python3-bpfcc`, `linux-headers-5.10.0-38-amd64`)
+- [x] Add sudoers rules for researcher (eBPF collector + pkill)
+- [x] Fix eBPF collector BPF compilation for Debian 11 / kernel 5.10 (added kernel includes, `bpf_probe_read_kernel`)
+- [x] Enrich eBPF events: PPID + parent_comm on process events, UID on network events
+- [x] Fix orchestrator: Ed25519 key, sudo/nohup ordering, pkill path, SSH transport keepalive
+- [x] Collect benign eBPF baseline (997 events → benign_v2.db, now 1,446,555 total events)
+- [x] Add `scripts/insert_ebpf_baseline.py` for manual eBPF baseline insertion
+- [x] Add `scripts/run_all_campaigns.sh` for running all 7 campaigns sequentially
+- [ ] Re-run all 7 campaigns with eBPF — needs `sudo` for IP aliasing on macOS (recon completed, others need sudo)
 - [ ] Create ISILDUR_READY_V2 snapshot on Frodo
-- [ ] Collect benign eBPF baseline: `python scripts/collect_ebpf_baseline.py --duration 3600`
-- [ ] Re-run all 7 campaigns with eBPF: `sudo python -m attacks run campaigns/<name>.yaml`
 - [ ] Validate v2 labels: `python scripts/validate_labels.py data/campaigns_v2.db -v`
 - [ ] Re-compose experiment streams from v2 databases
 - [ ] Publish v2 dataset to GitHub Releases
