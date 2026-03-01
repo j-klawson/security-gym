@@ -243,8 +243,10 @@ class EbpfOrchestrator:
         logger.info("Deployed eBPF collector to %s:%s", self.host, REMOTE_COLLECTOR_PATH)
 
         # Start the daemon in background with sudo
+        # nohup must wrap sudo (not the other way around) so sudo sees
+        # python3 as the command and matches the NOPASSWD sudoers rule.
         self._exec_command(
-            f"sudo nohup python3 {REMOTE_COLLECTOR_PATH} "
+            f"nohup sudo /usr/bin/python3 {REMOTE_COLLECTOR_PATH} "
             f"--output {REMOTE_OUTPUT_PATH} "
             f"> /dev/null 2>&1 & echo $!"
         )
@@ -260,7 +262,7 @@ class EbpfOrchestrator:
 
         # Signal the collector to stop
         self._exec_command(
-            f"sudo pkill -f '{REMOTE_COLLECTOR_PATH}' || true"
+            f"sudo /usr/bin/pkill -f security_gym_ebpf_collector || true"
         )
         logger.info("eBPF collector stopped on %s", self.host)
 
