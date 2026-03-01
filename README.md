@@ -284,6 +284,38 @@ Import real server logs as baseline benign data:
 python -m attacks import-logs server_logs.tar --db data/benign.db --host myserver
 ```
 
+### Collecting eBPF Kernel Events
+
+The three kernel observation channels (`process_events`, `network_events`, `file_events`) are populated by an eBPF collector daemon that attaches to Linux kernel tracepoints via [BCC](https://github.com/iovisor/bcc). This captures syscall-level activity invisible to traditional log files — the agent sees process execution chains, network connections, and file access as they happen in the kernel.
+
+**What's captured:**
+
+| Channel | Tracepoints | Fields |
+|---------|------------|--------|
+| `process_events` | `sys_enter_execve`, `sched_process_exit` | pid, ppid, uid, comm, parent\_comm, args, exit code |
+| `network_events` | `sys_enter_connect`, `sys_enter_accept4` | pid, uid, comm, dst IP:port |
+| `file_events` | `sys_enter_openat`, `sys_enter_unlinkat` | pid, comm, path, flags |
+
+Process events include **parent process ancestry** (ppid + parent\_comm), allowing the agent to learn causal chains — e.g., `apache2 → wget` is suspicious while `cron → wget` may be routine. Network events include the **effective UID**, so the agent can learn user-identity-aware policies.
+
+**Benign baseline collection:**
+
+eBPF kernel events are collected from the target server during normal operation (no attacks running) to establish a baseline of benign system activity:
+
+```bash
+# Collect 1 hour of benign kernel events from the target server
+python scripts/collect_ebpf_baseline.py --duration 3600
+
+# Preview without collecting
+python scripts/collect_ebpf_baseline.py --duration 3600 --dry-run
+```
+
+This copies the existing benign log database to a v2 database, then SSHs into the target, deploys the eBPF collector, runs for the specified duration, retrieves the events, and inserts them as benign (`is_malicious=0`). The resulting `benign_v2.db` contains both traditional log events and kernel-level events.
+
+**During attack campaigns:**
+
+When `ebpf: {enabled: true}` is set in a campaign YAML, the orchestrator automatically starts the eBPF collector before the attack begins and stops it after. Kernel events captured during attack windows are labeled malicious through the same time+IP matching used for log events — an `execve wget` from the attacker's IP during an attack phase is correctly labeled as part of the attack.
+
 ### Composing Experiment Streams
 
 Combine benign and attack data into reproducible experiment streams:
