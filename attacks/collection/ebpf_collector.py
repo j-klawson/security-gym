@@ -201,8 +201,13 @@ class EbpfOrchestrator:
         self._transport = None
         self._events: list[KernelEvent] = []
 
-    def _get_transport(self):
-        """Get or create a persistent SSH transport."""
+    def _get_transport(self, force_new: bool = False):
+        """Get or create an SSH transport.
+
+        Args:
+            force_new: Close any existing transport and create a fresh one.
+                Use after long idle periods where the connection may have gone stale.
+        """
         try:
             import paramiko  # type: ignore[import-not-found]
         except ImportError:
@@ -211,10 +216,19 @@ class EbpfOrchestrator:
                 "Install with: pip install 'security-gym[attacks]'"
             )
 
+        if force_new and self._transport is not None:
+            try:
+                self._transport.close()
+            except Exception:
+                pass
+            self._transport = None
+
         if self._transport is None or not self._transport.is_active():
             self._transport = paramiko.Transport((self.host, self.ssh_port))
             key = paramiko.Ed25519Key.from_private_key_file(str(self.ssh_key))
             self._transport.connect(username=self.ssh_user, pkey=key)
+            # Keep the connection alive during long collection runs
+            self._transport.set_keepalive(30)
             logger.info("SSH transport established to %s@%s", self.ssh_user, self.host)
 
         return self._transport
@@ -260,6 +274,9 @@ class EbpfOrchestrator:
         """
         import paramiko  # type: ignore[import-not-found]
 
+        # Fresh transport — the old one may have gone stale during collection
+        transport = self._get_transport(force_new=True)
+
         # Signal the collector to stop
         self._exec_command(
             f"sudo /usr/bin/pkill -f security_gym_ebpf_collector || true"
@@ -267,7 +284,6 @@ class EbpfOrchestrator:
         logger.info("eBPF collector stopped on %s", self.host)
 
         # Retrieve output via SFTP
-        transport = self._get_transport()
         sftp = paramiko.SFTPClient.from_transport(transport)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as tmp:
