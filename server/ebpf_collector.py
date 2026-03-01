@@ -50,8 +50,10 @@ BPF_PROCESS = _SELF_FILTER + r"""
 struct execve_event_t {
     u64 ts;
     u32 pid;
+    u32 ppid;
     u32 uid;
     char comm[64];
+    char parent_comm[64];
     char args[256];
 };
 
@@ -72,6 +74,13 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve) {
     evt.pid = bpf_get_current_pid_tgid() >> 32;
     evt.uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
     bpf_get_current_comm(&evt.comm, sizeof(evt.comm));
+
+    /* Read parent PID and comm from task_struct */
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    bpf_probe_read_kernel(&evt.ppid, sizeof(evt.ppid),
+                          &task->real_parent->tgid);
+    bpf_probe_read_kernel_str(&evt.parent_comm, sizeof(evt.parent_comm),
+                              &task->real_parent->comm);
 
     /* Read first arg (filename) */
     const char *filename = args->filename;
@@ -108,6 +117,7 @@ BPF_NETWORK = _SELF_FILTER + r"""
 struct connect_event_t {
     u64 ts;
     u32 pid;
+    u32 uid;
     char comm[64];
     u32 saddr;
     u32 daddr;
@@ -125,6 +135,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_connect) {
     struct connect_event_t evt = {};
     evt.ts = bpf_ktime_get_ns();
     evt.pid = bpf_get_current_pid_tgid() >> 32;
+    evt.uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
     bpf_get_current_comm(&evt.comm, sizeof(evt.comm));
 
     struct sockaddr *addr = (struct sockaddr *)args->uservaddr;
@@ -148,6 +159,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_accept4) {
     struct connect_event_t evt = {};
     evt.ts = bpf_ktime_get_ns();
     evt.pid = bpf_get_current_pid_tgid() >> 32;
+    evt.uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
     bpf_get_current_comm(&evt.comm, sizeof(evt.comm));
 
     accept_events.perf_submit(args, &evt, sizeof(evt));
@@ -265,10 +277,12 @@ class EbpfCollector:
     def _on_execve(self, cpu, data, size):
         event = self._bpf_process["execve_events"].event(data)
         comm = event.comm.decode("utf-8", errors="replace")
+        parent_comm = event.parent_comm.decode("utf-8", errors="replace")
         args = event.args.decode("utf-8", errors="replace")
         self._write_line(
-            f"{_now_iso()} execve pid={event.pid} uid={event.uid} "
-            f"comm={comm} args={args}"
+            f"{_now_iso()} execve pid={event.pid} ppid={event.ppid} "
+            f"uid={event.uid} comm={comm} parent_comm={parent_comm} "
+            f"args={args}"
         )
 
     def _on_exit(self, cpu, data, size):
@@ -285,15 +299,16 @@ class EbpfCollector:
         dst = _ip_str(event.daddr)
         dport = struct.unpack("!H", struct.pack("H", event.dport))[0]
         self._write_line(
-            f"{_now_iso()} connect pid={event.pid} comm={comm} "
-            f"dst={dst}:{dport}"
+            f"{_now_iso()} connect pid={event.pid} uid={event.uid} "
+            f"comm={comm} dst={dst}:{dport}"
         )
 
     def _on_accept(self, cpu, data, size):
         event = self._bpf_network["accept_events"].event(data)
         comm = event.comm.decode("utf-8", errors="replace")
         self._write_line(
-            f"{_now_iso()} accept pid={event.pid} comm={comm}"
+            f"{_now_iso()} accept pid={event.pid} uid={event.uid} "
+            f"comm={comm}"
         )
 
     def _on_file(self, cpu, data, size):

@@ -105,6 +105,8 @@ Hook the RL agent directly into the Linux kernel for real-time observation of sy
 - [ ] Re-run all campaigns with eBPF collection enabled
 - [ ] Re-compose experiment streams from v2 databases
 - [ ] Validate v2 label accuracy
+- Enrich eBPF event lines: PPID + parent_comm on process events, UID on network events
+- Periodic kernel state summary as text (active PIDs, open sockets, privileged process count, new procs/conns per window) — injected into the event stream as a text line, not structured numerics, so the agent learns its own encoding. Revisit after Phase 6 baselines show whether the agent struggles with event-rate signals in raw text.
 - Attack campaigns that generate kernel-level telemetry (privilege escalation, rootkits, fileless malware)
 - Real-time streaming from kernel to agent (low-latency path, not log-based)
 - Integration with existing log + NetFlow streams for multi-modal observation

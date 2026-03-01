@@ -59,13 +59,13 @@ SAMPLE_JOURNAL_LINES = [
 # ── Sample eBPF event lines ──────────────────────────────────────────
 
 SAMPLE_EBPF_PROCESS_LINES = [
-    "2026-02-17T10:00:05.123456Z execve pid=1234 uid=1000 comm=wget args=wget,http://example.com/file",
+    "2026-02-17T10:00:05.123456Z execve pid=1234 ppid=1200 uid=1000 comm=wget parent_comm=apache2 args=wget,http://example.com/file",
     "2026-02-17T10:00:05.234567Z exit pid=1234 code=0",
 ]
 
 SAMPLE_EBPF_NETWORK_LINES = [
-    "2026-02-17T10:00:05.345678Z connect pid=1234 comm=wget dst=93.184.216.34:80",
-    "2026-02-17T10:00:05.456789Z accept pid=5678 comm=sshd",
+    "2026-02-17T10:00:05.345678Z connect pid=1234 uid=1000 comm=wget dst=93.184.216.34:80",
+    "2026-02-17T10:00:05.456789Z accept pid=5678 uid=0 comm=sshd",
 ]
 
 SAMPLE_EBPF_FILE_LINES = [

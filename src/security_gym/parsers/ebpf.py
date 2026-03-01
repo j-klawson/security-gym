@@ -1,8 +1,8 @@
 """Parser for eBPF collector output format.
 
 Handles timestamped kernel event lines produced by server/ebpf_collector.py:
-  2026-02-22T12:00:01.123456Z execve pid=1234 uid=1000 comm=wget args=wget,...
-  2026-02-22T12:00:01.234567Z connect pid=1234 comm=wget dst=93.184.216.34:80
+  2026-02-22T12:00:01.123456Z execve pid=1234 ppid=500 uid=1000 comm=wget parent_comm=apache2 args=wget,...
+  2026-02-22T12:00:01.234567Z connect pid=1234 uid=1000 comm=wget dst=93.184.216.34:80
   2026-02-22T12:00:01.345678Z open pid=1234 comm=wget path=/tmp/payload.sh flags=O_WRONLY|O_CREAT
 """
 

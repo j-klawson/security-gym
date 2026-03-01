@@ -28,8 +28,10 @@ class TestProcessEvents:
         assert event.event_type == "execve"
         assert event.source == "ebpf_process"
         assert event.pid == 1234
+        assert event.fields["ppid"] == 1200
         assert event.fields["uid"] == 1000
         assert event.fields["comm"] == "wget"
+        assert event.fields["parent_comm"] == "apache2"
         assert event.timestamp.tzinfo is not None
 
     def test_parse_exit(self):
@@ -50,6 +52,7 @@ class TestNetworkEvents:
         assert event.event_type == "connect"
         assert event.source == "ebpf_network"
         assert event.pid == 1234
+        assert event.fields["uid"] == 1000
         assert event.src_ip == "93.184.216.34"
 
     def test_parse_accept(self):
@@ -59,6 +62,7 @@ class TestNetworkEvents:
         assert event.event_type == "accept"
         assert event.source == "ebpf_network"
         assert event.pid == 5678
+        assert event.fields["uid"] == 0
 
 
 class TestFileEvents:
