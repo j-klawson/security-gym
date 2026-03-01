@@ -213,7 +213,7 @@ class EbpfOrchestrator:
 
         if self._transport is None or not self._transport.is_active():
             self._transport = paramiko.Transport((self.host, self.ssh_port))
-            key = paramiko.RSAKey.from_private_key_file(str(self.ssh_key))
+            key = paramiko.Ed25519Key.from_private_key_file(str(self.ssh_key))
             self._transport.connect(username=self.ssh_user, pkey=key)
             logger.info("SSH transport established to %s@%s", self.ssh_user, self.host)
 

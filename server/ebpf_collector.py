@@ -45,6 +45,8 @@ static inline int is_self(void) {
 
 # Process events: execve + exit
 BPF_PROCESS = _SELF_FILTER + r"""
+#include <linux/sched.h>
+
 struct execve_event_t {
     u64 ts;
     u32 pid;
@@ -85,7 +87,13 @@ TRACEPOINT_PROBE(sched, sched_process_exit) {
     struct exit_event_t evt = {};
     evt.ts = bpf_ktime_get_ns();
     evt.pid = bpf_get_current_pid_tgid() >> 32;
-    evt.code = args->code >> 8;  /* exit code in upper bits */
+
+    /* Exit code lives in task_struct; read via bpf_probe_read_kernel */
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    int exit_code = 0;
+    bpf_probe_read_kernel(&exit_code, sizeof(exit_code),
+                          &task->exit_code);
+    evt.code = exit_code >> 8;
 
     exit_events.perf_submit(args, &evt, sizeof(evt));
     return 0;
@@ -94,6 +102,9 @@ TRACEPOINT_PROBE(sched, sched_process_exit) {
 
 # Network events: connect + accept
 BPF_NETWORK = _SELF_FILTER + r"""
+#include <linux/socket.h>
+#include <linux/in.h>
+
 struct connect_event_t {
     u64 ts;
     u32 pid;
