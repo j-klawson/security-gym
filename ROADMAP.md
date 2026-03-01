@@ -34,7 +34,8 @@ Generate labeled attack datasets by running campaigns against the Isildur VM.
 - Post-auth execution campaign: 591 events (237 malicious, 354 benign)
 - Full kill chain campaign (recon → cred stuffing → post-auth): 1,156 events (562 malicious, 594 benign)
 - Benign DB imported from 3 servers (1.45M events), scrubbed of identifying hostnames/domains/emails
-- Experiment streams composed: 7d brute-only, 30d heavy, 90d mixed, 365d realistic (136k events, 897 campaigns)
+- v1 experiment streams composed: 7d brute-only, 30d heavy, 90d mixed, 365d realistic (136k events, 897 campaigns)
+- v2 experiment streams re-composed with eBPF: 7d (26k events, 6 campaigns), 30d (510k, 284), 90d (475k, 277), 365d (1.64M, 897)
 - Dataset published to GitHub Releases and Zenodo (DOI: 10.5281/zenodo.18810299)
 - `security-gym` CLI for dataset download (`security-gym download`, `security-gym list`)
 
@@ -89,7 +90,7 @@ Extend security-gym with benign and attack NetFlow data generation. Attack traff
 - StreamComposer support for mixed log + NetFlow experiment streams
 - Evaluate whether metadata-only features are sufficient for detection without payload inspection
 
-## Phase 9 — Kernel Event Telemetry (In Progress)
+## Phase 9 — Kernel Event Telemetry ✅
 
 Hook the RL agent directly into the Linux kernel for real-time observation of system-level events. Moves beyond log parsing to native kernel telemetry — the agent observes syscalls, process creation, file access, and network connections as they happen. This is the path toward an agent that can detect and respond to threats at the OS level rather than after the fact in log files.
 
@@ -109,7 +110,7 @@ Hook the RL agent directly into the Linux kernel for real-time observation of sy
 - [x] Validate v2 labels — 5 PASS, 1 SKIP, 3 FAIL (all known/expected: eBPF spot-check, temporal order, session coherence)
 - [x] Fix label validator crash (check 5: target array consistency — `collect_numpy` returns list of dicts, not numpy array)
 - [ ] Create ISILDUR_READY_V2 snapshot on Frodo
-- [ ] Re-compose experiment streams from v2 databases
+- [x] Re-compose experiment streams from v2 databases — 4 streams with eBPF kernel events
 - [x] Enrich eBPF event lines: PPID + parent_comm on process events, UID on network events
 - Extended 24-hour benign eBPF baseline from Isildur (capture cron jobs, log rotation, Docker health checks, diurnal patterns) with synthetic benign traffic (legitimate SSH sessions, web browsing through nginx)
 - Periodic kernel state summary as text (active PIDs, open sockets, privileged process count, new procs/conns per window) — injected into the event stream as a text line, not structured numerics, so the agent learns its own encoding. Revisit after Phase 6 baselines show whether the agent struggles with event-rate signals in raw text.

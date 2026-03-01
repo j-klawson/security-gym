@@ -59,10 +59,12 @@ Current action items for security-gym development.
 - [x] Validate v2 labels — 5 PASS, 1 SKIP, 3 FAIL (all known/expected)
 - [x] Fix label validator check 5 crash — `collect_numpy` returns list of dicts, not numpy array; rewrote to use ground truth dict fields
 - [ ] Create ISILDUR_READY_V2 snapshot on Frodo
-- [ ] Re-compose experiment streams from v2 databases
+- [x] Re-compose experiment streams from v2 databases (7d: 26k, 30d: 510k, 90d: 475k, 365d: 1.64M events)
 - [ ] Publish v2 dataset to GitHub Releases
 
-## Phase 6 — Experiments
+## Phase 6 — Experiments (Ready)
+
+v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannelTextEncoder, GymRLAgent, gym_replication 48 conditions, gym_rl 6 conditions).
 
 - [ ] Wire SecurityGymStream into alberta-framework's `run_multi_head_learning_loop()`
 - [ ] Run baseline experiment: LMS on event features (24-dim)
