@@ -105,10 +105,11 @@ Hook the RL agent directly into the Linux kernel for real-time observation of sy
 - [x] Fix BPF compilation for Debian 11 / BCC 0.18 (kernel includes, `bpf_probe_read_kernel` for task_struct)
 - [x] Fix orchestrator: Ed25519 key, sudo/nohup ordering, SSH transport keepalive
 - [x] Collect benign eBPF baseline (997 events from ~1 hour manual collection)
-- [ ] Re-run all campaigns with eBPF collection (needs `sudo` for IP aliasing)
+- [x] Re-run all 7 campaigns with eBPF collection — 48,520 events (24,774 malicious, 23,746 benign)
+- [x] Validate v2 labels — 5 PASS, 1 SKIP, 3 FAIL (all known/expected: eBPF spot-check, temporal order, session coherence)
+- [x] Fix label validator crash (check 5: target array consistency — `collect_numpy` returns list of dicts, not numpy array)
 - [ ] Create ISILDUR_READY_V2 snapshot on Frodo
 - [ ] Re-compose experiment streams from v2 databases
-- [ ] Validate v2 label accuracy
 - [x] Enrich eBPF event lines: PPID + parent_comm on process events, UID on network events
 - Extended 24-hour benign eBPF baseline from Isildur (capture cron jobs, log rotation, Docker health checks, diurnal patterns) with synthetic benign traffic (legitimate SSH sessions, web browsing through nginx)
 - Periodic kernel state summary as text (active PIDs, open sockets, privileged process count, new procs/conns per window) — injected into the event stream as a text line, not structured numerics, so the agent learns its own encoding. Revisit after Phase 6 baselines show whether the agent struggles with event-rate signals in raw text.

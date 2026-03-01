@@ -284,45 +284,56 @@ def check_target_array_consistency(
         return CheckResult(name, CheckResult.SKIP, "  security_gym not installed")
 
     stream = SecurityGymStream(db_path)
-    _, targets = stream.collect_numpy(limit=sample_size)
+    _, ground_truths = stream.collect_numpy(limit=sample_size)
 
-    if targets.shape[0] == 0:
+    if len(ground_truths) == 0:
         return CheckResult(name, CheckResult.SKIP, "  No events to check")
 
-    import numpy as np
-
     issues = []
-    n = targets.shape[0]
+    n = len(ground_truths)
 
-    # Head 0 (is_malicious): should always be present for labeled events
-    head0 = targets[:, 0]
-    head0_nan = np.isnan(head0).sum()
+    n_malicious = sum(1 for gt in ground_truths if gt["is_malicious"])
+    n_benign = n - n_malicious
 
-    # Benign events (head0 == 0): heads 1-2 should be NaN
-    benign_mask = head0 == 0.0
-    if benign_mask.any():
-        for h in [1, 2]:
-            non_nan = (~np.isnan(targets[benign_mask, h])).sum()
-            if non_nan > 0:
-                issues.append(f"  {non_nan} benign events have non-NaN head {h}")
+    # Benign events should have no attack_type or attack_stage
+    benign_with_type = sum(
+        1 for gt in ground_truths
+        if not gt["is_malicious"] and gt.get("attack_type") is not None
+    )
+    if benign_with_type > 0:
+        issues.append(f"  {benign_with_type} benign events have non-null attack_type")
 
-    # Malicious events (head0 == 1): heads 1-3 should NOT be NaN
-    mal_mask = head0 == 1.0
-    if mal_mask.any():
-        for h in [1, 2, 3]:
-            nan_count = np.isnan(targets[mal_mask, h]).sum()
-            if nan_count > 0:
-                issues.append(f"  {nan_count} malicious events have NaN head {h}")
+    benign_with_stage = sum(
+        1 for gt in ground_truths
+        if not gt["is_malicious"] and gt.get("attack_stage") is not None
+    )
+    if benign_with_stage > 0:
+        issues.append(f"  {benign_with_stage} benign events have non-null attack_stage")
 
-    # All non-NaN values should be in [0.0, 1.0]
-    finite = targets[~np.isnan(targets)]
-    out_of_range = ((finite < 0.0) | (finite > 1.0)).sum()
+    # Malicious events should have attack_type and attack_stage
+    mal_no_type = sum(
+        1 for gt in ground_truths
+        if gt["is_malicious"] and gt.get("attack_type") is None
+    )
+    if mal_no_type > 0:
+        issues.append(f"  {mal_no_type} malicious events missing attack_type")
+
+    mal_no_stage = sum(
+        1 for gt in ground_truths
+        if gt["is_malicious"] and gt.get("attack_stage") is None
+    )
+    if mal_no_stage > 0:
+        issues.append(f"  {mal_no_stage} malicious events missing attack_stage")
+
+    # true_risk should be in [0.0, 10.0]
+    out_of_range = sum(
+        1 for gt in ground_truths
+        if not (0.0 <= gt.get("true_risk", 0.0) <= 10.0)
+    )
     if out_of_range > 0:
-        issues.append(f"  {out_of_range} non-NaN target values outside [0.0, 1.0]")
+        issues.append(f"  {out_of_range} events have true_risk outside [0.0, 10.0]")
 
-    detail = f"  Checked {n} events ({int(mal_mask.sum())} malicious, {int(benign_mask.sum())} benign)"
-    if head0_nan > 0:
-        detail += f", {head0_nan} unlabeled (NaN head 0)"
+    detail = f"  Checked {n} events ({n_malicious} malicious, {n_benign} benign)"
 
     if issues:
         detail += "\n" + "\n".join(issues)

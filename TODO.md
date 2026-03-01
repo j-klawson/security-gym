@@ -53,9 +53,12 @@ Current action items for security-gym development.
 - [x] Collect benign eBPF baseline (997 events → benign_v2.db, now 1,446,555 total events)
 - [x] Add `scripts/insert_ebpf_baseline.py` for manual eBPF baseline insertion
 - [x] Add `scripts/run_all_campaigns.sh` for running all 7 campaigns sequentially
-- [ ] Re-run all 7 campaigns with eBPF — needs `sudo` for IP aliasing on macOS (recon completed, others need sudo)
+- [x] Re-run all 7 campaigns with eBPF — 48,520 events (24,774 malicious, 23,746 benign) across 8 campaign IDs
+  - ebpf_file: 35,722 | journal: 9,689 | ebpf_network: 1,292 | ebpf_process: 1,014 | auth_log: 357 | web_access: 350 | syslog: 96
+  - Attack types: brute_force (12,992), credential_stuffing (5,722), execution (5,276), web_exploit (694), discovery (90)
+- [x] Validate v2 labels — 5 PASS, 1 SKIP, 3 FAIL (all known/expected)
+- [x] Fix label validator check 5 crash — `collect_numpy` returns list of dicts, not numpy array; rewrote to use ground truth dict fields
 - [ ] Create ISILDUR_READY_V2 snapshot on Frodo
-- [ ] Validate v2 labels: `python scripts/validate_labels.py data/campaigns_v2.db -v`
 - [ ] Re-compose experiment streams from v2 databases
 - [ ] Publish v2 dataset to GitHub Releases
 
