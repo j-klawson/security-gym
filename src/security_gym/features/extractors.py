@@ -1,4 +1,10 @@
-"""Per-event feature extraction."""
+"""Per-event feature extraction.
+
+.. deprecated:: 0.3.0
+    The v1 environment presents raw text observations. The agent learns
+    its own representations. This module is retained for backwards
+    compatibility only.
+"""
 
 from __future__ import annotations
 

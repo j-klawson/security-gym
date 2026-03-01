@@ -10,24 +10,28 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 - `attacks/` — attack scripts for data generation (NOT pip-installed)
 - `campaigns/` — YAML campaign configs for Isildur (ssh_brute_only, log4shell_only, recon_only, recon_ssh_log4shell, credential_stuffing_only, post_auth_only, full_killchain)
 - `configs/` — YAML composition configs for StreamComposer (stream_7d_brute_only, stream_30d_heavy, stream_90d_mixed, stream_365d_realistic)
-- `server/` — target VM provisioning docs and Docker Compose for vulnerable services
+- `server/` — target VM provisioning docs, Docker Compose for vulnerable services, and eBPF collector daemon
 - `data/` — runtime data directory (gitignored)
 - `tests/` — pytest test suite
 
 ## Key Patterns
 
-- **Parsers**: decorator-based registry (`@ParserRegistry.register('auth_log')`); five parsers: `auth_log`, `syslog`, `web_access`, `web_error`, `journal`. Shared syslog header in `_syslog_header.py` with `parse_syslog_header()` supporting both BSD (`Feb 22 00:55:01`) and RFC 3339 (`2026-02-22T00:55:01.662021-05:00`) timestamp formats; RFC 3339 offsets are converted to UTC. Each parser stores `event_type` in `fields["event_type"]` for DB round-trip.
-- **EventStore**: SQLite with WAL mode, ID-based cursor for resumable reads
-- **Features**: three modes — `event` (24-dim), `hashed` (configurable), `session` (20-dim with subnet entropy, per-session state tracking)
-- **Wrappers**: `HashedFeatureWrapper`, `SessionAggregationWrapper`, `WindowedWrapper`, `DecayingTraceWrapper` — composable gymnasium wrappers in `envs/wrappers.py`
-- **Targets**: multi-head arrays (5 heads), compatible with Alberta MultiHeadMLPLearner. NaN used internally by TargetBuilder; info dict uses -1.0 sentinel (`INACTIVE_HEAD`) for gymnasium compatibility.
-- **Environment**: continuous stream (terminated=False always, truncated=True at end of data)
-- **Adapter**: `SecurityGymStream` reads EventStore directly (bypasses gym overhead), provides `collect_numpy()`/`collect()` for batch learning and `iter_batches()` for constant-memory streaming. JAX optional — `collect_numpy()` always works. Supports `speed` (0=full, 1.0=realtime, 10.0=10x) and `loop` (never-ending wrap-around) parameters for server-speed evaluation mode; batch methods always run single-pass at full speed.
-- **StreamComposer**: offline composition of benign + attack EventStore DBs into experiment streams (`data/composer.py`). YAML config specifies duration, seed, Poisson attack schedule (`campaigns_per_day`), and MITRE ATT&CK-weighted type distribution. Cycles benign events to fill duration, transplants attack sessions preserving intra-session timing. Deterministic given seed. DB paths in YAML are relative to the config file's parent directory (use `../data/` from `configs/`). CLI: `python -m attacks compose configs/stream_90d_mixed.yaml [--dry-run]`. Benign DB (`data/benign.db`) built from 3 servers: server3 (3k events), server2 (78k), server1 (1.36M). All identifying hostnames/domains scrubbed before publishing (`scripts/scrub_benign_db.py`).
+- **Parsers**: decorator-based registry (`@ParserRegistry.register('auth_log')`); six parsers: `auth_log`, `syslog`, `web_access`, `web_error`, `journal`, `ebpf`. Shared syslog header in `_syslog_header.py` with `parse_syslog_header()` supporting both BSD (`Feb 22 00:55:01`) and RFC 3339 (`2026-02-22T00:55:01.662021-05:00`) timestamp formats; RFC 3339 offsets are converted to UTC. Each parser stores `event_type` in `fields["event_type"]` for DB round-trip.
+- **EventStore**: SQLite with WAL mode, ID-based cursor for resumable reads. Schema version 2. Valid sources: `auth_log`, `syslog`, `web_access`, `web_error`, `journal`, `ebpf_process`, `ebpf_network`, `ebpf_file`.
+- **Environment (v1)**: `SecurityLogStream-v1` — agent sees raw text streams (like `tail -N` of log files and kernel event channels) and takes defensive actions that causally affect future observations.
+  - **Observation**: `Dict` of 6 `Text` channels (`auth_log`, `syslog`, `web_log`, `process_events`, `network_events`, `file_events`) + `Box(3)` system stats. Ring buffer per channel (configurable `tail_lines`, `max_chars`).
+  - **Action**: `Dict` of `Discrete(6)` (pass/alert/throttle/block_source/unblock/isolate) + `Box(1)` risk_score (0-10, GVF-like auxiliary prediction).
+  - **Reward**: asymmetric action costs (block benign = -1.0, block attacker = +1.0, pass benign = 0.0) + risk score MSE + ongoing consequence feedback from blocked/throttled events.
+  - **Defense state**: blocklist (100% drop), throttle list (90% drop), isolation mode (blocks all network events). Agent can escalate/de-escalate: throttle → block → unblock.
+  - **Continuous stream**: `terminated=False` always, `truncated=True` at end of data.
+- **eBPF Collector**: `server/ebpf_collector.py` — BCC daemon attaching to kernel tracepoints (execve, connect, accept, openat, unlinkat). Deployed on Isildur. Output: timestamped text lines. Self-PID filtering to avoid feedback loops. Orchestration wrapper: `attacks/collection/ebpf_collector.py`.
+- **Adapter**: `SecurityGymStream` reads EventStore directly, maintains ring buffers per channel (same as env), yields text observations + ground truth dicts. Supports `speed` (0=full, 1.0=realtime, 10.0=10x) and `loop` (never-ending wrap-around) parameters.
+- **StreamComposer**: offline composition of benign + attack EventStore DBs into experiment streams (`data/composer.py`). Handles both log and eBPF events (all use same events table). YAML config specifies duration, seed, Poisson attack schedule (`campaigns_per_day`), and MITRE ATT&CK-weighted type distribution. Cycles benign events to fill duration, transplants attack sessions preserving intra-session timing. Deterministic given seed.
 - **Registration**: belt+suspenders — `__init__.py` calls `register_envs()` on import AND `pyproject.toml` entry point for auto-discovery
 - **Attack Modules**: decorator-based registry (`@AttackModuleRegistry.register('ssh_brute_force')`); five modules: `recon` (scapy SYN scan), `ssh_brute_force` (paramiko), `log4shell` (requests + JNDI injection), `credential_stuffing` (paramiko, unique cred pairs tried once each), `ssh_post_auth` (paramiko, post-auth command execution with 4 command profiles + optional payload download). Non-stationary `TimingProfile` with constant/accelerating/decelerating/custom profiles. Full kill chain campaign: recon → credential stuffing → post-auth execution.
-- **Campaign Framework**: YAML-driven orchestrator — load config → execute phases → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules/compose`.
+- **Campaign Framework**: YAML-driven orchestrator — load config → start eBPF collector (if enabled) → execute phases → stop eBPF → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules/compose`. eBPF collection configured via `collection.ebpf.enabled: true` in campaign YAML.
 - **Label Validation**: `scripts/validate_labels.py` — 9 checks (label consistency, raw line spot-checks, campaign boundaries, campaign type cross-val, target array NaN masking, attack type distribution, temporal order, no unlabeled events, session coherence). Supports `--check NAME` to run subset, `--spot-check N`, `--sample-size N`, `--verbose`. Exit 0 = all pass/skip, exit 1 = any FAIL. Distribution check is WARN-only (campaign weights control frequency, not event count — brute_force generates ~40x more events per campaign than discovery).
+- **Deprecated (v0)**: Feature extractors (`features/extractors.py`, `features/hasher.py`, `features/session.py`), wrappers (`envs/wrappers.py`), and target builder (`targets/builder.py`) are retained for backwards compatibility but no longer used by the v1 environment. The agent now learns its own representations from raw text.
 - **Known Data Quality**: campaigns.db has 87 temporal order violations (multi-server import boundary) and 6 mixed-label sessions (labeler edge cases). Composed experiment streams are clean — StreamComposer sorts by timestamp. benign.db shares the temporal order issue.
 - **CI**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main
 
@@ -58,8 +62,9 @@ python -m build                   # Build wheel
 - **Services:** Log4Shell (CVE-2021-44228) on :8080 (`ghcr.io/christophetd/log4shell-vulnerable-app`), Nginx 1.21.0 reverse proxy on :80, SSH on :22
 - **Users:** `researcher` (adm, systemd-journal groups) for log collection via SSH key `~/.ssh/isildur_research`, password auth enabled for attack modules; `keith` (sudo, docker groups) for administration
 - **Log sources:** auth.log, syslog, nginx access/error logs, journalctl, Docker JSON logs
+- **eBPF:** BCC-based kernel event collection (requires `bpfcc-tools python3-bpfcc linux-headers`). Collector daemon at `server/ebpf_collector.py`.
 - **Ground truth:** auditd rules track wget/curl/sh/bash execution with `research_exploit` key; researcher has NOPASSWD sudo for `ausearch`
-- **Snapshot:** `ISILDUR_READY_V1` golden state on Frodo
+- **Snapshot:** `ISILDUR_READY_V1` golden state on Frodo (needs `ISILDUR_READY_V2` after BCC install)
 
 ## Sibling Projects
 

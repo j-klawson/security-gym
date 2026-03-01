@@ -379,12 +379,12 @@ class TestStreamComposer:
 
         from security_gym.adapters.scan_stream import SecurityGymStream
 
-        stream = SecurityGymStream(output_db, feature_mode="event")
-        obs, tgt = stream.collect_numpy()
-        assert obs.ndim == 2
-        assert tgt.ndim == 2
-        assert obs.shape[0] == tgt.shape[0]
-        assert obs.shape[0] > 0
+        stream = SecurityGymStream(output_db)
+        observations, ground_truths = stream.collect_numpy()
+        assert isinstance(observations, list)
+        assert isinstance(ground_truths, list)
+        assert len(observations) == len(ground_truths)
+        assert len(observations) > 0
 
     def test_dry_run_no_file(self, compose_config):
         config_path, output_db = compose_config

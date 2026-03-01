@@ -7,5 +7,6 @@ import security_gym.parsers.syslog  # noqa: F401
 import security_gym.parsers.web_access  # noqa: F401
 import security_gym.parsers.web_error  # noqa: F401
 import security_gym.parsers.journal  # noqa: F401
+import security_gym.parsers.ebpf  # noqa: F401
 
 __all__ = ["ParsedEvent", "Parser", "ParserRegistry"]

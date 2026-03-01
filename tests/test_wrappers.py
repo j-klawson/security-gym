@@ -1,10 +1,14 @@
-"""Tests for gymnasium wrappers."""
+"""Tests for gymnasium wrappers.
+
+.. deprecated:: 0.3.0
+    These wrappers are deprecated — designed for v0 numeric observations.
+    All tests are skipped. Retained for reference only.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from security_gym.envs.log_stream_env import SecurityLogStreamEnv
 from security_gym.envs.wrappers import (
     DecayingTraceWrapper,
@@ -13,6 +17,10 @@ from security_gym.envs.wrappers import (
     WindowedWrapper,
 )
 from security_gym.features.session import SESSION_FEATURE_DIM
+
+pytestmark = pytest.mark.skip(
+    reason="Wrappers are deprecated — designed for v0 numeric observation space"
+)
 
 
 @pytest.fixture

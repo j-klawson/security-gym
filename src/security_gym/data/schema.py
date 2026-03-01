@@ -1,6 +1,6 @@
 """SQLite schema for security-gym event storage."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS events (

@@ -163,6 +163,16 @@ class LogSourceConfig:
             raise ValueError(f"Log source {self.name!r}: need remote_path or remote_command")
 
 
+# ── eBPF ───────────────────────────────────────────────────────────────
+
+@dataclass
+class EbpfConfig:
+    """eBPF kernel event collection settings."""
+
+    enabled: bool = False
+    baseline_seconds: int = 60  # collect baseline before/after attack window
+
+
 # ── Collection ─────────────────────────────────────────────────────────
 
 @dataclass
@@ -172,6 +182,11 @@ class CollectionConfig:
     log_sources: list[LogSourceConfig]
     db_path: str = "data/campaigns.db"
     time_buffer_seconds: int = 60
+    ebpf: EbpfConfig = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.ebpf is None:
+            self.ebpf = EbpfConfig()
 
 
 # ── Target ─────────────────────────────────────────────────────────────
@@ -248,10 +263,16 @@ def _parse_log_source(raw: dict[str, Any]) -> LogSourceConfig:
 
 def _parse_collection(raw: dict[str, Any]) -> CollectionConfig:
     output = raw.get("output", {})
+    ebpf_raw = raw.get("ebpf", {})
+    ebpf = EbpfConfig(
+        enabled=ebpf_raw.get("enabled", False),
+        baseline_seconds=ebpf_raw.get("baseline_seconds", 60),
+    ) if ebpf_raw else EbpfConfig()
     return CollectionConfig(
         log_sources=[_parse_log_source(s) for s in raw.get("log_sources", [])],
         db_path=output.get("db_path", "data/campaigns.db"),
         time_buffer_seconds=output.get("time_buffer_seconds", 60),
+        ebpf=ebpf,
     )
 
 

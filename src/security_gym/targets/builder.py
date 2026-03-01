@@ -1,5 +1,10 @@
 """Ground truth → multi-head target arrays with NaN masking.
 
+.. deprecated:: 0.3.0
+    The v1 environment uses an integrated reward function instead of
+    multi-head target arrays. This module is retained for backwards
+    compatibility only.
+
 Produces target arrays compatible with MultiHeadMLPLearner.
 NaN signals "skip update for this head" — the learner ignores
 inactive heads during gradient computation.

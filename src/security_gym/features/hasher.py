@@ -1,5 +1,10 @@
 """Feature hashing for raw log text via mmh3.
 
+.. deprecated:: 0.3.0
+    The v1 environment presents raw text observations. The agent learns
+    its own representations. This module is retained for backwards
+    compatibility only.
+
 Converts raw log lines to fixed-size vectors using the hashing trick
 (Weinberger et al. 2009). Signed hashing reduces collision bias.
 L2-normalized output stabilizes MLP training.

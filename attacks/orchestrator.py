@@ -11,6 +11,7 @@ from typing import Any
 
 from attacks.collection.auditd import filter_exploit_events, parse_ausearch_output
 from attacks.collection.collector import LogCollector
+from attacks.collection.ebpf_collector import EbpfOrchestrator
 from attacks.collection.labeler import CampaignLabeler
 from attacks.config import CampaignConfig
 from attacks.modules.base import AttackModuleRegistry, AttackResult
@@ -33,6 +34,7 @@ class CampaignOrchestrator:
         self.ip_manager = IPManager()
         self.campaign_id = f"campaign_{uuid.uuid4().hex[:12]}"
         self._results: list[AttackResult] = []
+        self._ebpf: EbpfOrchestrator | None = None
 
     def run(self) -> str:
         """Execute the full campaign pipeline. Returns campaign_id."""
@@ -43,20 +45,28 @@ class CampaignOrchestrator:
         logger.info("=" * 60)
 
         try:
+            # Start eBPF collection if configured
+            self._start_ebpf()
+
             # Phase 1: Execute attacks
             self._execute_phases()
 
-            # Phase 2: Collect logs
+            # Phase 2: Stop eBPF and collect kernel events
+            ebpf_events = self._stop_ebpf()
+
+            # Phase 3: Collect logs
             events = self._collect_logs()
 
-            # Phase 3: Label events
+            # Phase 4: Label events
             labeled = self._label_events(events)
 
-            # Phase 4: Store in EventStore
-            self._store(events, labeled)
+            # Phase 5: Store in EventStore (logs + eBPF events)
+            self._store(events, labeled, ebpf_events)
 
         finally:
             self.ip_manager.cleanup_all()
+            if self._ebpf is not None:
+                self._ebpf.close()
 
         logger.info("Campaign %s complete", self.campaign_id)
         return self.campaign_id
@@ -95,6 +105,44 @@ class CampaignOrchestrator:
         labeled = self._label_events(events)
         self._store(events, labeled)
         return self.campaign_id
+
+    # ── eBPF ──────────────────────────────────────────────────────────
+
+    def _start_ebpf(self) -> None:
+        """Start eBPF collector on target if configured."""
+        if not self.config.collection.ebpf.enabled:
+            return
+
+        self._ebpf = EbpfOrchestrator(
+            host=self.config.target.host,
+            ssh_user=self.config.target.ssh_user,
+            ssh_key=self.config.target.ssh_key,
+            ssh_port=self.config.target.ssh_port,
+        )
+        self._ebpf.start()
+        logger.info("eBPF collector started on %s", self.config.target.host)
+
+        # Baseline collection period
+        baseline = self.config.collection.ebpf.baseline_seconds
+        if baseline > 0:
+            logger.info("Collecting %ds baseline eBPF data...", baseline)
+            time.sleep(baseline)
+
+    def _stop_ebpf(self) -> list:
+        """Stop eBPF collector and return parsed events."""
+        if self._ebpf is None:
+            return []
+
+        # Post-attack baseline collection
+        baseline = self.config.collection.ebpf.baseline_seconds
+        if baseline > 0:
+            logger.info("Collecting %ds post-attack eBPF baseline...", baseline)
+            time.sleep(baseline)
+
+        self._ebpf.stop()
+        parsed_events = self._ebpf.get_parsed_events()
+        logger.info("Collected %d eBPF kernel events", len(parsed_events))
+        return parsed_events
 
     # ── Internal ───────────────────────────────────────────────────────
 
@@ -188,8 +236,13 @@ class CampaignOrchestrator:
 
         return ground_truths
 
-    def _store(self, events: list, ground_truths: list[dict[str, Any]]) -> None:
-        """Store events and campaign metadata in EventStore."""
+    def _store(
+        self,
+        events: list,
+        ground_truths: list[dict[str, Any]],
+        ebpf_events: list | None = None,
+    ) -> None:
+        """Store events, eBPF events, and campaign metadata in EventStore."""
         db_path = Path(self.config.collection.db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -224,7 +277,14 @@ class CampaignOrchestrator:
                 },
             })
 
-            # Bulk insert events with ground truth
+            # Bulk insert log events with ground truth
             count = store.bulk_insert(events, ground_truths)
 
-        logger.info("Stored %d events + campaign record", count)
+            # Insert eBPF kernel events (labeled as benign baseline)
+            if ebpf_events:
+                ebpf_gts = [{"is_malicious": 0, "severity": 0}] * len(ebpf_events)
+                ebpf_count = store.bulk_insert(ebpf_events, ebpf_gts)
+                logger.info("Stored %d eBPF kernel events", ebpf_count)
+                count += ebpf_count
+
+        logger.info("Stored %d total events + campaign record", count)

@@ -1,5 +1,10 @@
 """Gymnasium wrappers for feature transformation and temporal aggregation.
 
+.. deprecated:: 0.3.0
+    These wrappers were designed for the v0 numeric observation space.
+    The v1 environment presents raw text observations and no longer needs
+    feature transformation wrappers. Retained for backwards compatibility.
+
 Four wrappers that can be composed around SecurityLogStreamEnv:
 
 - HashedFeatureWrapper: replaces observations with hashed raw log text

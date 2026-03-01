@@ -12,6 +12,12 @@ from security_gym.data.schema import SCHEMA_SQL, SCHEMA_VERSION
 from security_gym.parsers.base import ParsedEvent
 
 
+VALID_SOURCES = {
+    "auth_log", "syslog", "web_access", "web_error", "journal",
+    "ebpf_process", "ebpf_network", "ebpf_file",
+}
+
+
 class EventStore:
     """SQLite-backed event storage for security log data.
 
@@ -192,6 +198,15 @@ class EventStore:
     def get_sources(self) -> list[str]:
         cursor = self.conn.execute("SELECT DISTINCT source FROM events ORDER BY source")
         return [row[0] for row in cursor]
+
+    def get_events_by_sources(
+        self,
+        sources: list[str],
+        start_id: int = 0,
+        limit: int = 1000,
+    ) -> list[sqlite3.Row]:
+        """Fetch events from specific sources with id > start_id, ordered by id."""
+        return self.get_events(start_id=start_id, limit=limit, sources=sources)
 
     def get_campaigns(self) -> list[dict]:
         cursor = self.conn.execute("SELECT * FROM campaigns ORDER BY start_time")

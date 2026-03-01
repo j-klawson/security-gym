@@ -1,4 +1,4 @@
-"""Tests for SecurityGymStream Alberta adapter."""
+"""Tests for SecurityGymStream adapter (v1 — text observations)."""
 
 from __future__ import annotations
 
@@ -8,25 +8,16 @@ import numpy as np
 import pytest
 
 from security_gym.adapters.scan_stream import SecurityGymStream, HAS_JAX
-from security_gym.features.extractors import FEATURE_DIM
-from security_gym.targets.builder import N_HEADS
+from security_gym.envs.log_stream_env import _CHANNELS
 
 
 # ── Properties ─────────────────────────────────────────────────────────
 
 
 class TestProperties:
-    def test_feature_dim_event(self, tmp_db):
-        stream = SecurityGymStream(tmp_db, feature_mode="event")
-        assert stream.feature_dim == FEATURE_DIM == 24
-
-    def test_feature_dim_hashed(self, tmp_db):
-        stream = SecurityGymStream(tmp_db, feature_mode="hashed", hash_dim=512)
-        assert stream.feature_dim == 512
-
-    def test_n_heads(self, tmp_db):
+    def test_channels(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        assert stream.n_heads == N_HEADS == 5
+        assert stream.channels == list(_CHANNELS)
 
     def test_len(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
@@ -44,116 +35,87 @@ class TestProperties:
         stream = SecurityGymStream(tmp_db, start_id=100)
         assert stream.remaining() == 0
 
-    def test_unknown_feature_mode(self, tmp_db):
-        with pytest.raises(ValueError, match="Unknown feature_mode"):
-            SecurityGymStream(tmp_db, feature_mode="unknown")
-
 
 # ── collect_numpy ──────────────────────────────────────────────────────
 
 
 class TestCollectNumpy:
-    def test_shapes(self, tmp_db):
+    def test_returns_lists(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        obs, tgt = stream.collect_numpy()
-        assert obs.shape == (13, 24)
-        assert tgt.shape == (13, 5)
+        observations, ground_truths = stream.collect_numpy()
+        assert isinstance(observations, list)
+        assert isinstance(ground_truths, list)
+        assert len(observations) == 13
+        assert len(ground_truths) == 13
 
-    def test_dtypes(self, tmp_db):
+    def test_observation_has_channels(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        obs, tgt = stream.collect_numpy()
-        assert obs.dtype == np.float32
-        assert tgt.dtype == np.float32
+        observations, _ = stream.collect_numpy()
+        obs = observations[0]
+        for ch in _CHANNELS:
+            assert ch in obs
+            assert isinstance(obs[ch], str)
+        assert "system_stats" in obs
+        assert obs["system_stats"].dtype == np.float32
 
-    def test_hashed_shapes(self, tmp_db):
-        stream = SecurityGymStream(tmp_db, feature_mode="hashed", hash_dim=256)
-        obs, tgt = stream.collect_numpy()
-        assert obs.shape == (13, 256)
-        assert tgt.shape == (13, 5)
-
-    def test_nan_masking_unlabeled(self, tmp_db):
-        """Unlabeled events (last 3) should have all-NaN targets."""
+    def test_ground_truth_structure(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        _, tgt = stream.collect_numpy()
-        # Events 11-13 are unlabeled (indices 10-12)
-        for i in range(10, 13):
-            assert np.all(np.isnan(tgt[i])), f"Event {i} should be all-NaN"
+        _, ground_truths = stream.collect_numpy()
+        gt = ground_truths[0]
+        assert "is_malicious" in gt
+        assert "attack_type" in gt
+        assert "true_risk" in gt
 
-    def test_nan_masking_benign(self, tmp_db):
-        """Benign events have is_malicious=0, severity=0, other heads NaN."""
+    def test_benign_ground_truth(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        _, tgt = stream.collect_numpy()
+        _, ground_truths = stream.collect_numpy()
+        # First 5 events are benign
         for i in range(5):
-            assert tgt[i, 0] == 0.0  # is_malicious
-            assert np.isnan(tgt[i, 1])  # attack_type (not set for benign)
-            assert np.isnan(tgt[i, 2])  # attack_stage (not set for benign)
-            assert tgt[i, 3] == 0.0  # severity=0 → 0/3 = 0.0
-            assert np.isnan(tgt[i, 4])  # session_value (not set)
+            assert ground_truths[i]["is_malicious"] is False
+            assert ground_truths[i]["true_risk"] == 0.0
 
-    def test_nan_masking_malicious(self, tmp_db):
-        """Malicious events have all attack heads filled."""
+    def test_malicious_ground_truth(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        _, tgt = stream.collect_numpy()
+        _, ground_truths = stream.collect_numpy()
+        # Events 5-9 are malicious (brute_force, initial_access)
         for i in range(5, 10):
-            assert tgt[i, 0] == 1.0  # is_malicious
-            assert not np.isnan(tgt[i, 1])  # attack_type is set
-            assert not np.isnan(tgt[i, 2])  # attack_stage is set
-            assert not np.isnan(tgt[i, 3])  # severity is set
-            assert np.isnan(tgt[i, 4])  # session_value not set
+            assert ground_truths[i]["is_malicious"] is True
+            assert ground_truths[i]["true_risk"] > 0.0
+            assert ground_truths[i]["attack_type"] == "brute_force"
 
     def test_empty_db(self, empty_db):
         stream = SecurityGymStream(empty_db)
-        obs, tgt = stream.collect_numpy()
-        assert obs.shape == (0, 24)
-        assert tgt.shape == (0, 5)
-        assert obs.dtype == np.float32
-        assert tgt.dtype == np.float32
+        observations, ground_truths = stream.collect_numpy()
+        assert observations == []
+        assert ground_truths == []
 
     def test_start_id_filtering(self, tmp_db):
         stream = SecurityGymStream(tmp_db, start_id=10)
-        obs, tgt = stream.collect_numpy()
-        assert obs.shape[0] == 3  # only last 3 events
+        observations, _ = stream.collect_numpy()
+        assert len(observations) == 3
 
     def test_limit(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        obs, tgt = stream.collect_numpy(limit=5)
-        assert obs.shape == (5, 24)
-        assert tgt.shape == (5, 5)
+        observations, ground_truths = stream.collect_numpy(limit=5)
+        assert len(observations) == 5
+        assert len(ground_truths) == 5
 
     def test_deterministic(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        obs1, tgt1 = stream.collect_numpy()
-        obs2, tgt2 = stream.collect_numpy()
-        np.testing.assert_array_equal(obs1, obs2)
-        # Use assert_equal for NaN-safe comparison
-        np.testing.assert_array_equal(tgt1, tgt2)
+        obs1, gt1 = stream.collect_numpy()
+        obs2, gt2 = stream.collect_numpy()
+        for o1, o2 in zip(obs1, obs2):
+            for ch in _CHANNELS:
+                assert o1[ch] == o2[ch]
 
-
-# ── Features match env ─────────────────────────────────────────────────
-
-
-class TestFeaturesMatchEnv:
-    def test_features_identical_to_env(self, tmp_db):
-        """Verify the adapter produces identical features to the gymnasium env."""
-        from security_gym.envs.log_stream_env import SecurityLogStreamEnv
-
-        # Collect from adapter
+    def test_auth_log_grows(self, tmp_db):
+        """Text observations should accumulate as events are processed."""
         stream = SecurityGymStream(tmp_db)
-        stream_obs, _ = stream.collect_numpy()
-
-        # Collect from env
-        env = SecurityLogStreamEnv(tmp_db)
-        obs, info = env.reset()
-        env_obs = [obs]
-        for _ in range(12):
-            obs, _, _, truncated, _ = env.step(0)
-            if truncated:
-                break
-            env_obs.append(obs)
-        env.close()
-
-        env_arr = np.stack(env_obs)
-        np.testing.assert_array_almost_equal(stream_obs, env_arr)
+        observations, _ = stream.collect_numpy()
+        # First observation has 1 line, last has up to tail_lines
+        first_len = len(observations[0]["auth_log"])
+        last_len = len(observations[-1]["auth_log"])
+        assert last_len >= first_len
 
 
 # ── iter_batches ───────────────────────────────────────────────────────
@@ -163,16 +125,14 @@ class TestIterBatches:
     def test_chunk_sizes(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
         sizes = []
-        for obs_batch, tgt_batch in stream.iter_batches(size=4):
-            assert obs_batch.shape[1] == 24
-            assert tgt_batch.shape[1] == 5
-            assert obs_batch.shape[0] == tgt_batch.shape[0]
-            sizes.append(obs_batch.shape[0])
+        for obs_batch, gt_batch in stream.iter_batches(size=4):
+            assert len(obs_batch) == len(gt_batch)
+            sizes.append(len(obs_batch))
         assert sizes == [4, 4, 4, 1]
 
     def test_total_events(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        total = sum(obs.shape[0] for obs, _ in stream.iter_batches(size=3))
+        total = sum(len(obs) for obs, _ in stream.iter_batches(size=3))
         assert total == 13
 
     def test_empty_db(self, empty_db):
@@ -183,38 +143,29 @@ class TestIterBatches:
     def test_matches_collect(self, tmp_db):
         """iter_batches should produce the same data as collect_numpy."""
         stream = SecurityGymStream(tmp_db)
-        full_obs, full_tgt = stream.collect_numpy()
+        full_obs, full_gt = stream.collect_numpy()
 
         batch_obs = []
-        batch_tgt = []
-        for obs, tgt in stream.iter_batches(size=4):
-            batch_obs.append(obs)
-            batch_tgt.append(tgt)
+        batch_gt = []
+        for obs, gt in stream.iter_batches(size=4):
+            batch_obs.extend(obs)
+            batch_gt.extend(gt)
 
-        concat_obs = np.concatenate(batch_obs)
-        concat_tgt = np.concatenate(batch_tgt)
-        np.testing.assert_array_equal(full_obs, concat_obs)
-        np.testing.assert_array_equal(full_tgt, concat_tgt)
-
-
-# ── collect (JAX-conditional) ──────────────────────────────────────────
+        assert len(batch_obs) == len(full_obs)
+        for i in range(len(full_obs)):
+            for ch in _CHANNELS:
+                assert batch_obs[i][ch] == full_obs[i][ch]
 
 
-@pytest.mark.skipif(not HAS_JAX, reason="JAX not installed")
-class TestCollectJAX:
-    def test_returns_jax_arrays(self, tmp_db):
-        import jax.numpy as jnp
+# ── collect (delegates to collect_numpy) ──────────────────────────────
 
+
+class TestCollect:
+    def test_returns_same_as_numpy(self, tmp_db):
         stream = SecurityGymStream(tmp_db)
-        obs, tgt = stream.collect()
-        assert isinstance(obs, jnp.ndarray)
-        assert isinstance(tgt, jnp.ndarray)
-
-    def test_shapes(self, tmp_db):
-        stream = SecurityGymStream(tmp_db)
-        obs, tgt = stream.collect()
-        assert obs.shape == (13, 24)
-        assert tgt.shape == (13, 5)
+        obs1, gt1 = stream.collect()
+        obs2, gt2 = stream.collect_numpy()
+        assert len(obs1) == len(obs2)
 
 
 # ── Iterator (JAX-conditional) ─────────────────────────────────────────
@@ -228,8 +179,8 @@ class TestIteratorJAX:
         stream = SecurityGymStream(tmp_db)
         step = next(iter(stream))
         assert isinstance(step, TimeStep)
-        assert step.observation.shape == (24,)
-        assert step.target.shape == (5,)
+        assert isinstance(step.observation, dict)
+        assert isinstance(step.ground_truth, dict)
 
     def test_count_matches_remaining(self, tmp_db):
         stream = SecurityGymStream(tmp_db, start_id=0)
@@ -250,18 +201,6 @@ class TestIteratorNoJAX:
             next(iter(stream))
 
 
-# ── collect without JAX ────────────────────────────────────────────────
-
-
-@pytest.mark.skipif(HAS_JAX, reason="Test requires JAX to NOT be installed")
-class TestCollectNoJAX:
-    def test_returns_numpy(self, tmp_db):
-        stream = SecurityGymStream(tmp_db)
-        obs, tgt = stream.collect()
-        assert isinstance(obs, np.ndarray)
-        assert isinstance(tgt, np.ndarray)
-
-
 # ── Loop mode ─────────────────────────────────────────────────────────
 
 
@@ -270,7 +209,7 @@ class TestLoopMode:
         """With loop=True, stream should wrap and yield more events than exist."""
         stream = SecurityGymStream(tmp_db, loop=True)
         count = 0
-        for row in stream._iter_rows(limit=26):  # 2x the 13 events
+        for row in stream._iter_rows(limit=26):
             count += 1
         assert count == 26
 
@@ -285,13 +224,13 @@ class TestLoopMode:
     def test_loop_collect_numpy_ignores_loop(self, tmp_db):
         """collect_numpy always reads once (no looping)."""
         stream = SecurityGymStream(tmp_db, loop=True)
-        obs, tgt = stream.collect_numpy()
-        assert obs.shape[0] == 13  # Not infinite
+        obs, gt = stream.collect_numpy()
+        assert len(obs) == 13
 
     def test_loop_iter_batches(self, tmp_db):
         """iter_batches respects loop=False."""
         stream = SecurityGymStream(tmp_db, loop=False)
-        total = sum(obs.shape[0] for obs, _ in stream.iter_batches(size=5))
+        total = sum(len(obs) for obs, _ in stream.iter_batches(size=5))
         assert total == 13
 
 
@@ -311,9 +250,7 @@ class TestSpeedMode:
         stream = SecurityGymStream(tmp_db, speed=1.0)
         with patch("security_gym.adapters.scan_stream.time.sleep") as mock_sleep:
             list(stream._iter_rows(limit=5))
-            # Events are 10 seconds apart in test fixtures
             assert mock_sleep.call_count > 0
-            # Check that sleep was called with positive values
             for call in mock_sleep.call_args_list:
                 assert call[0][0] > 0
 
@@ -323,12 +260,36 @@ class TestSpeedMode:
         with patch("security_gym.adapters.scan_stream.time.sleep") as mock_sleep:
             list(stream._iter_rows(limit=3))
             if mock_sleep.call_count > 0:
-                # Events are 10s apart → at 10x speed, sleep should be ~1s
                 for call in mock_sleep.call_args_list:
-                    assert call[0][0] <= 2.0  # 10s / 10 = 1s, some tolerance
+                    assert call[0][0] <= 2.0
 
     def test_speed_does_not_affect_collect(self, tmp_db):
-        """collect_numpy should work even with speed set (no loop interference)."""
+        """collect_numpy should work even with speed set."""
         stream = SecurityGymStream(tmp_db, speed=0, loop=False)
-        obs, tgt = stream.collect_numpy()
-        assert obs.shape[0] == 13
+        obs, gt = stream.collect_numpy()
+        assert len(obs) == 13
+
+
+# ── eBPF source integration ──────────────────────────────────────────
+
+
+class TestEbpfSources:
+    def test_ebpf_events_in_stream(self, tmp_db_with_ebpf):
+        """Stream with eBPF events should include kernel event channels."""
+        stream = SecurityGymStream(tmp_db_with_ebpf)
+        observations, ground_truths = stream.collect_numpy()
+        # 13 regular + 3 eBPF = 16 events
+        assert len(observations) == 16
+
+    def test_kernel_channels_populated(self, tmp_db_with_ebpf):
+        """eBPF events should populate process/network/file channels."""
+        stream = SecurityGymStream(tmp_db_with_ebpf)
+        observations, _ = stream.collect_numpy()
+        last_obs = observations[-1]
+        # At least one kernel channel should have content
+        kernel_content = (
+            last_obs["process_events"]
+            + last_obs["network_events"]
+            + last_obs["file_events"]
+        )
+        assert len(kernel_content) > 0

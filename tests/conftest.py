@@ -56,6 +56,23 @@ SAMPLE_JOURNAL_LINES = [
     }),
 ]
 
+# ── Sample eBPF event lines ──────────────────────────────────────────
+
+SAMPLE_EBPF_PROCESS_LINES = [
+    "2026-02-17T10:00:05.123456Z execve pid=1234 uid=1000 comm=wget args=wget,http://example.com/file",
+    "2026-02-17T10:00:05.234567Z exit pid=1234 code=0",
+]
+
+SAMPLE_EBPF_NETWORK_LINES = [
+    "2026-02-17T10:00:05.345678Z connect pid=1234 comm=wget dst=93.184.216.34:80",
+    "2026-02-17T10:00:05.456789Z accept pid=5678 comm=sshd",
+]
+
+SAMPLE_EBPF_FILE_LINES = [
+    "2026-02-17T10:00:05.567890Z open pid=1234 comm=wget path=/tmp/payload.sh flags=O_WRONLY|O_CREAT",
+    "2026-02-17T10:00:05.678901Z unlink pid=5678 comm=rm path=/tmp/payload.sh",
+]
+
 SAMPLE_EVENTS: list[tuple[ParsedEvent, dict | None]] = []
 
 _base_time = datetime(2026, 2, 17, 10, 0, 0, tzinfo=timezone.utc)
@@ -125,6 +142,64 @@ def _make_sample_events() -> list[tuple[ParsedEvent, dict | None]]:
     return events
 
 
+def _make_ebpf_events() -> list[tuple[ParsedEvent, dict | None]]:
+    """Create eBPF kernel events for test fixtures."""
+    events = []
+    base = datetime(2026, 2, 17, 10, 0, 5, tzinfo=timezone.utc)
+
+    # Process events (benign)
+    events.append((
+        ParsedEvent(
+            timestamp=base,
+            source="ebpf_process",
+            raw_line="2026-02-17T10:00:05.000000Z execve pid=1234 uid=0 comm=cron args=/usr/sbin/cron",
+            event_type="execve",
+            fields={"event_type": "execve", "pid": 1234, "uid": 0, "comm": "cron"},
+            pid=1234,
+        ),
+        {"is_malicious": 0, "severity": 0},
+    ))
+
+    # Network events (attack)
+    events.append((
+        ParsedEvent(
+            timestamp=base + timedelta(milliseconds=100),
+            source="ebpf_network",
+            raw_line="2026-02-17T10:00:05.100000Z connect pid=5678 comm=wget dst=93.184.216.34:80",
+            event_type="connect",
+            fields={"event_type": "connect", "pid": 5678, "comm": "wget", "dst": "93.184.216.34:80"},
+            src_ip="93.184.216.34",
+            pid=5678,
+        ),
+        {
+            "is_malicious": 1,
+            "attack_type": "execution",
+            "attack_stage": "execution",
+            "severity": 3,
+        },
+    ))
+
+    # File events (attack)
+    events.append((
+        ParsedEvent(
+            timestamp=base + timedelta(milliseconds=200),
+            source="ebpf_file",
+            raw_line="2026-02-17T10:00:05.200000Z open pid=5678 comm=wget path=/tmp/payload.sh flags=O_WRONLY|O_CREAT",
+            event_type="open",
+            fields={"event_type": "open", "pid": 5678, "comm": "wget", "path": "/tmp/payload.sh"},
+            pid=5678,
+        ),
+        {
+            "is_malicious": 1,
+            "attack_type": "execution",
+            "attack_stage": "execution",
+            "severity": 3,
+        },
+    ))
+
+    return events
+
+
 SAMPLE_EVENTS = _make_sample_events()
 
 
@@ -140,6 +215,20 @@ def tmp_db(tmp_path):
     db_path = tmp_path / "test_events.db"
     store = EventStore(db_path, mode="w")
     for event, gt in SAMPLE_EVENTS:
+        store.insert_event(event, gt)
+    store.flush()
+    store.close()
+    return db_path
+
+
+@pytest.fixture
+def tmp_db_with_ebpf(tmp_path):
+    """Create a temporary EventStore with both log and eBPF events."""
+    db_path = tmp_path / "test_ebpf_events.db"
+    store = EventStore(db_path, mode="w")
+    for event, gt in SAMPLE_EVENTS:
+        store.insert_event(event, gt)
+    for event, gt in _make_ebpf_events():
         store.insert_event(event, gt)
     store.flush()
     store.close()

@@ -1,7 +1,8 @@
 """Alberta framework adapter — reads EventStore directly for batch learning.
 
 Provides SecurityGymStream, which bypasses the gymnasium env overhead and
-feeds (observations, targets) arrays directly to run_multi_head_learning_loop.
+feeds observations directly. Supports both the new v1 text observation
+format and legacy numeric feature modes.
 
 JAX is optional: collect_numpy() always works, collect() upgrades to JAX
 arrays when available, and the iterator requires JAX for TimeStep.
@@ -9,7 +10,7 @@ arrays when available, and the iterator requires JAX for TimeStep.
 
 from __future__ import annotations
 
-import json
+import collections
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,80 +19,67 @@ from typing import Any, Iterator
 import numpy as np
 
 from security_gym.data.event_store import EventStore
-from security_gym.features.extractors import EventFeatureExtractor, FEATURE_DIM
-from security_gym.features.hasher import FeatureHasher
-from security_gym.parsers.base import ParsedEvent
-from security_gym.targets.builder import N_HEADS, TargetBuilder
+from security_gym.envs.log_stream_env import (
+    _CHANNELS,
+    _RISK_MAP,
+    _SOURCE_TO_CHANNEL,
+    DEFAULT_MAX_CHARS,
+    DEFAULT_TAIL_LINES,
+)
 
 try:
-    import jax.numpy as jnp  # type: ignore[import-not-found]
+    import importlib.util
+    HAS_JAX = importlib.util.find_spec("jax") is not None
+except (ImportError, ModuleNotFoundError):
+    HAS_JAX = False
+
+if HAS_JAX:
     from typing import NamedTuple
 
     class TimeStep(NamedTuple):
-        observation: jnp.ndarray
-        target: jnp.ndarray
-
-    HAS_JAX = True
-except ImportError:
-    HAS_JAX = False
+        observation: dict[str, Any]
+        ground_truth: dict[str, Any]
 
 
 class SecurityGymStream:
-    """Stream adapter for Alberta framework's run_multi_head_learning_loop.
+    """Stream adapter for raw text observations from EventStore.
 
-    Reads directly from EventStore using the same feature extraction and
-    target building pipeline as SecurityLogStreamEnv, but bypasses gymnasium
-    overhead. NaN targets are preserved natively (no -1.0 sentinel conversion).
+    Reads directly from EventStore, maintaining ring buffers per channel
+    (same as SecurityLogStreamEnv), and yields text observations with
+    ground truth metadata.
 
     Args:
         db_path: Path to SQLite event database.
-        feature_mode: "event" (24-dim) or "hashed" (hash_dim).
-        hash_dim: Dimension for hashed features (only used when feature_mode="hashed").
-        sources: Optional list of source types to filter by.
+        tail_lines: Number of lines per channel ring buffer.
+        max_chars: Maximum characters per channel in observation.
         start_id: Resume cursor — only read events with id > start_id.
         batch_size: Number of rows per SQLite fetch (internal pagination).
-        speed: Pacing multiplier for server-speed mode. 0 = full speed (no sleeping,
-            default), 1.0 = realtime, 10.0 = 10x faster than realtime.
+        speed: Pacing multiplier. 0 = full speed, 1.0 = realtime, 10.0 = 10x.
         loop: When True, wrap cursor to 0 on exhaustion (never-ending stream).
     """
 
     def __init__(
         self,
         db_path: str | Path,
-        feature_mode: str = "event",
-        hash_dim: int = 1024,
-        sources: list[str] | None = None,
+        tail_lines: int = DEFAULT_TAIL_LINES,
+        max_chars: int = DEFAULT_MAX_CHARS,
         start_id: int = 0,
         batch_size: int = 5000,
         speed: float = 0,
         loop: bool = False,
     ):
         self.db_path = Path(db_path)
-        self.feature_mode = feature_mode
-        self.sources = sources
+        self.tail_lines = tail_lines
+        self.max_chars = max_chars
         self.start_id = start_id
         self.batch_size = batch_size
         self.speed = speed
         self.loop = loop
 
-        if feature_mode == "event":
-            self._extractor = EventFeatureExtractor()
-            self._feature_dim = FEATURE_DIM
-        elif feature_mode == "hashed":
-            self._hasher = FeatureHasher(dim=hash_dim)
-            self._feature_dim = hash_dim
-        else:
-            raise ValueError(f"Unknown feature_mode: {feature_mode!r}")
-
-        self._target_builder = TargetBuilder()
-
     @property
-    def feature_dim(self) -> int:
-        return self._feature_dim
-
-    @property
-    def n_heads(self) -> int:
-        return N_HEADS
+    def channels(self) -> list[str]:
+        """Observation channel names."""
+        return list(_CHANNELS)
 
     def __len__(self) -> int:
         """Total number of events in the store."""
@@ -101,66 +89,46 @@ class SecurityGymStream:
     def remaining(self) -> int:
         """Number of events with id > start_id."""
         with EventStore(self.db_path, mode="r") as store:
-            if self.sources:
-                placeholders = ",".join("?" for _ in self.sources)
-                cursor = store.conn.execute(
-                    f"SELECT COUNT(*) FROM events WHERE id > ? AND source IN ({placeholders})",  # nosec B608
-                    [self.start_id, *self.sources],
-                )
-            else:
-                cursor = store.conn.execute(
-                    "SELECT COUNT(*) FROM events WHERE id > ?",
-                    (self.start_id,),
-                )
+            cursor = store.conn.execute(
+                "SELECT COUNT(*) FROM events WHERE id > ?",
+                (self.start_id,),
+            )
             return int(cursor.fetchone()[0])
 
     # ── Internal pipeline ──────────────────────────────────────────────
 
-    def _row_to_parsed_event(self, row: dict[str, Any]) -> ParsedEvent:
-        """Convert a database row to a ParsedEvent for feature extraction."""
-        ts_str = row["timestamp"]
-        try:
-            ts = datetime.fromisoformat(ts_str)
-        except ValueError:
-            ts = datetime.now(timezone.utc)
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+    def _route_event(self, source: str) -> str:
+        """Map event source to observation channel."""
+        return _SOURCE_TO_CHANNEL.get(source, "syslog")
 
-        parsed = json.loads(row["parsed"]) if row.get("parsed") else {}
+    def _build_observation(
+        self, buffers: dict[str, collections.deque],
+    ) -> dict[str, Any]:
+        """Build text observation from ring buffers."""
+        obs: dict[str, Any] = {}
+        for ch in _CHANNELS:
+            lines = list(buffers.get(ch, []))
+            text = "\n".join(lines)
+            if len(text) > self.max_chars:
+                text = text[-self.max_chars:]
+            obs[ch] = text
+        obs["system_stats"] = np.array([0.5, 0.3, 0.2], dtype=np.float32)
+        return obs
 
-        return ParsedEvent(
-            timestamp=ts,
-            source=row["source"],
-            raw_line=row["raw_line"],
-            event_type=parsed.get("pattern", "other"),
-            fields=parsed,
-            src_ip=row.get("src_ip"),
-            username=row.get("username"),
-            service=row.get("service"),
-            session_id=row.get("session_id"),
-        )
-
-    def _extract_features(self, event: ParsedEvent, raw_line: str) -> np.ndarray:
-        if self.feature_mode == "event":
-            return self._extractor.extract(event)
-        elif self.feature_mode == "hashed":
-            return self._hasher.hash(raw_line)
-        raise ValueError(f"Unknown feature_mode: {self.feature_mode!r}")
-
-    def _build_targets(self, row: dict[str, Any]) -> np.ndarray:
-        """Build target array from a database row. NaN for inactive heads."""
-        if row.get("is_malicious") is None:
-            return self._target_builder.build_targets(None)
-        gt = {
-            "is_malicious": row["is_malicious"],
+    def _build_ground_truth(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Extract ground truth from a database row."""
+        is_mal = row.get("is_malicious")
+        attack_stage = row.get("attack_stage")
+        return {
+            "is_malicious": bool(is_mal) if is_mal is not None else False,
             "attack_type": row.get("attack_type"),
-            "attack_stage": row.get("attack_stage"),
-            "severity": row.get("severity"),
+            "attack_stage": attack_stage,
+            "campaign_id": row.get("campaign_id"),
+            "true_risk": _RISK_MAP.get(attack_stage if is_mal else None, 0.0),
         }
-        return self._target_builder.build_targets(gt)
 
     def _parse_row_timestamp(self, row: dict[str, Any]) -> datetime | None:
-        """Parse timestamp from a row dict, returning None on failure."""
+        """Parse timestamp from a row dict."""
         ts_str = row.get("timestamp")
         if not ts_str:
             return None
@@ -176,9 +144,6 @@ class SecurityGymStream:
         self, limit: int | None = None, *, allow_loop: bool = True,
     ) -> Iterator[dict[str, Any]]:
         """Paginated EventStore reads. Yields dict rows.
-
-        Supports speed-based pacing (sleep between events based on timestamp
-        deltas) and loop mode (cursor wraps to 0 on exhaustion).
 
         Args:
             limit: Maximum number of rows to yield.
@@ -198,12 +163,9 @@ class SecurityGymStream:
                     if page_limit <= 0:
                         break
 
-                rows = store.get_events(
-                    start_id=cursor, limit=page_limit, sources=self.sources,
-                )
+                rows = store.get_events(start_id=cursor, limit=page_limit)
                 if not rows:
                     if loop and (limit is None or count < limit):
-                        # Wrap around to beginning
                         cursor = 0
                         prev_ts = None
                         continue
@@ -232,84 +194,75 @@ class SecurityGymStream:
 
     def collect_numpy(
         self, limit: int | None = None,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Collect all events as numpy arrays.
-
-        Args:
-            limit: Maximum number of events to collect. Useful for train/test splits.
+    ) -> tuple[dict[str, list], list[dict[str, Any]]]:
+        """Collect all events as observation dicts + ground truth lists.
 
         Returns:
-            (observations, targets) — shapes (N, feature_dim) and (N, n_heads).
+            (observations, ground_truths) where observations is a dict
+            mapping channel names to lists of strings, and ground_truths
+            is a list of ground truth dicts.
         """
-        obs_list: list[np.ndarray] = []
-        tgt_list: list[np.ndarray] = []
+        buffers = {ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS}
+        observations: list[dict[str, Any]] = []
+        ground_truths: list[dict[str, Any]] = []
 
         for row in self._iter_rows(limit=limit, allow_loop=False):
-            event = self._row_to_parsed_event(row)
-            obs_list.append(self._extract_features(event, row["raw_line"]))
-            tgt_list.append(self._build_targets(row))
+            # Add to buffer
+            channel = self._route_event(row.get("source", ""))
+            buffers[channel].append(row["raw_line"])
 
-        if not obs_list:
-            return (
-                np.empty((0, self._feature_dim), dtype=np.float32),
-                np.empty((0, N_HEADS), dtype=np.float32),
-            )
+            # Build observation snapshot
+            obs = self._build_observation(buffers)
+            observations.append(obs)
+            ground_truths.append(self._build_ground_truth(row))
 
-        return np.stack(obs_list), np.stack(tgt_list)
+        return observations, ground_truths
 
     def collect(
         self, limit: int | None = None,
     ) -> tuple[Any, Any]:
-        """Collect events as JAX arrays if available, else numpy.
-
-        Args:
-            limit: Maximum number of events to collect.
-
-        Returns:
-            (observations, targets) as jnp.ndarray (if JAX available) or np.ndarray.
-        """
-        obs, tgt = self.collect_numpy(limit=limit)
-        if HAS_JAX:
-            return jnp.asarray(obs), jnp.asarray(tgt)
-        return obs, tgt
+        """Collect events. Returns same format as collect_numpy."""
+        return self.collect_numpy(limit=limit)
 
     # ── Streaming interface ────────────────────────────────────────────
 
     def iter_batches(
         self, size: int = 1000,
-    ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-        """Yield (obs_batch, targets_batch) numpy arrays of at most `size` events.
+    ) -> Iterator[tuple[list[dict[str, Any]], list[dict[str, Any]]]]:
+        """Yield (obs_batch, gt_batch) of at most `size` events.
 
-        Keeps memory footprint constant regardless of database size.
+        Each batch contains lists of observation dicts and ground truth dicts.
         """
-        obs_buf: list[np.ndarray] = []
-        tgt_buf: list[np.ndarray] = []
+        buffers = {ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS}
+        obs_buf: list[dict[str, Any]] = []
+        gt_buf: list[dict[str, Any]] = []
 
         for row in self._iter_rows(allow_loop=False):
-            event = self._row_to_parsed_event(row)
-            obs_buf.append(self._extract_features(event, row["raw_line"]))
-            tgt_buf.append(self._build_targets(row))
+            channel = self._route_event(row.get("source", ""))
+            buffers[channel].append(row["raw_line"])
+
+            obs_buf.append(self._build_observation(buffers))
+            gt_buf.append(self._build_ground_truth(row))
 
             if len(obs_buf) >= size:
-                yield np.stack(obs_buf), np.stack(tgt_buf)
-                obs_buf.clear()
-                tgt_buf.clear()
+                yield obs_buf, gt_buf
+                obs_buf = []
+                gt_buf = []
 
         if obs_buf:
-            yield np.stack(obs_buf), np.stack(tgt_buf)
+            yield obs_buf, gt_buf
 
     def __iter__(self) -> Iterator:
-        """Yield TimeStep(observation, target) for each event. Requires JAX."""
+        """Yield TimeStep(observation, ground_truth) for each event. Requires JAX."""
         if not HAS_JAX:
             raise ImportError(
                 "JAX is required for the iterator interface. "
                 "Install with: pip install 'security-gym[alberta]'"
             )
+        buffers = {ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS}
         for row in self._iter_rows():
-            event = self._row_to_parsed_event(row)
-            obs = self._extract_features(event, row["raw_line"])
-            tgt = self._build_targets(row)
-            yield TimeStep(
-                observation=jnp.asarray(obs),
-                target=jnp.asarray(tgt),
-            )
+            channel = self._route_event(row.get("source", ""))
+            buffers[channel].append(row["raw_line"])
+            obs = self._build_observation(buffers)
+            gt = self._build_ground_truth(row)
+            yield TimeStep(observation=obs, ground_truth=gt)

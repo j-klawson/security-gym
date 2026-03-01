@@ -1,8 +1,13 @@
-"""Continuous log stream Gymnasium environment for security prediction research."""
+"""Continuous log stream Gymnasium environment for security defense research.
+
+The agent observes raw text streams (like `tail -N` of log files and kernel
+event channels) and takes defensive actions (block, throttle, alert, isolate)
+that causally affect future observations.
+"""
 
 from __future__ import annotations
 
-import json
+import collections
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,23 +17,78 @@ import numpy as np
 from gymnasium import spaces
 
 from security_gym.data.event_store import EventStore
-from security_gym.features.extractors import EventFeatureExtractor, FEATURE_DIM
-from security_gym.features.hasher import FeatureHasher
-from security_gym.parsers.base import ParsedEvent
-from security_gym.targets.builder import N_HEADS, TargetBuilder
 
-# Sentinel for inactive/unknown heads in info["targets"].
-# All valid target values are in [0, 1], so -1.0 is unambiguous.
-# NaN is used internally by TargetBuilder but replaced here because
-# gymnasium's check_env uses np.allclose which treats NaN != NaN.
-INACTIVE_HEAD = -1.0
+# ── Constants ────────────────────────────────────────────────────────
+
+DEFAULT_TAIL_LINES = 500
+DEFAULT_MAX_CHARS = 50_000
+DEFAULT_THROTTLE_DROP_RATE = 0.9
+
+# Action indices
+ACTION_PASS = 0
+ACTION_ALERT = 1
+ACTION_THROTTLE = 2
+ACTION_BLOCK_SOURCE = 3
+ACTION_UNBLOCK = 4
+ACTION_ISOLATE = 5
+
+# Ground truth risk score mapping: attack_stage → risk value
+_RISK_MAP = {
+    None: 0.0,           # benign
+    "recon": 3.0,        # reconnaissance
+    "initial_access": 5.0,  # brute force / credential stuffing
+    "execution": 8.0,    # active exploitation
+    "persistence": 9.0,  # establishing persistence
+    "exfiltration": 10.0,  # data exfiltration
+}
+
+# Action reward tables
+_ATTACK_REWARDS = {
+    ACTION_PASS: -0.5,
+    ACTION_ALERT: 0.5,
+    ACTION_THROTTLE: 0.75,
+    ACTION_BLOCK_SOURCE: 1.0,
+    ACTION_UNBLOCK: -0.5,  # unblocking during attack is bad
+    ACTION_ISOLATE: 0.25,
+}
+
+_BENIGN_REWARDS = {
+    ACTION_PASS: 0.0,
+    ACTION_ALERT: -0.3,
+    ACTION_THROTTLE: -0.5,
+    ACTION_BLOCK_SOURCE: -1.0,
+    ACTION_UNBLOCK: 0.0,  # unblocking during benign is neutral
+    ACTION_ISOLATE: -2.0,
+}
+
+# Map event sources → observation channels
+_SOURCE_TO_CHANNEL = {
+    "auth_log": "auth_log",
+    "syslog": "syslog",
+    "web_access": "web_log",
+    "web_error": "web_log",
+    "ebpf_process": "process_events",
+    "ebpf_network": "network_events",
+    "ebpf_file": "file_events",
+    "journal": "syslog",  # journal events go to syslog channel
+}
+
+# All observation channels
+_CHANNELS = [
+    "auth_log", "syslog", "web_log",
+    "process_events", "network_events", "file_events",
+]
 
 
 class SecurityLogStreamEnv(gymnasium.Env):
-    """Continuous log stream environment for security prediction research.
+    """Continuous log stream environment for security defense research.
 
-    Replays labeled events from a SQLite database. Each step advances the
-    cursor to the next event and returns extracted features as the observation.
+    The agent observes raw text streams (log files + kernel events) and
+    takes defensive actions that causally affect future observations.
+
+    Observation: Dict of Text channels (tail of recent events) + Box system stats.
+    Action: Dict of Discrete(6) action + Box(1) risk score.
+    Reward: Asymmetric action costs + risk score MSE + ongoing consequence feedback.
 
     There are no MDP terminal states — ``terminated`` is always ``False``.
     ``truncated`` becomes ``True`` when the event stream is exhausted.
@@ -39,38 +99,46 @@ class SecurityLogStreamEnv(gymnasium.Env):
     def __init__(
         self,
         db_path: str | Path,
-        feature_mode: str = "event",
-        feature_dim: int | None = None,
-        hash_dim: int = 1024,
-        sources: list[str] | None = None,
+        tail_lines: int = DEFAULT_TAIL_LINES,
+        max_chars: int = DEFAULT_MAX_CHARS,
+        throttle_drop_rate: float = DEFAULT_THROTTLE_DROP_RATE,
+        reward_config: dict[str, Any] | None = None,
         render_mode: str | None = None,
     ):
         super().__init__()
         self.db_path = Path(db_path)
-        self.feature_mode = feature_mode
-        self.sources = sources
+        self.tail_lines = tail_lines
+        self.max_chars = max_chars
+        self.throttle_drop_rate = throttle_drop_rate
         self.render_mode = render_mode
 
-        # Feature extractor
-        if feature_mode == "event":
-            self._extractor = EventFeatureExtractor()
-            self._feature_dim = feature_dim or FEATURE_DIM
-        elif feature_mode == "hashed":
-            self._hasher = FeatureHasher(dim=hash_dim)
-            self._feature_dim = feature_dim or hash_dim
-        else:
-            raise ValueError(f"Unknown feature_mode: {feature_mode!r}")
+        # Optional reward weight overrides
+        self._reward_config = reward_config or {}
 
-        self._target_builder = TargetBuilder()
+        # ── Observation space ────────────────────────────────────────
+        # Use printable ASCII charset (log lines contain spaces, punctuation, etc.)
+        _printable = "".join(chr(i) for i in range(32, 127))
+        text_space = spaces.Text(min_length=0, max_length=max_chars, charset=_printable)
+        self.observation_space = spaces.Dict({
+            # Log event streams
+            "auth_log": text_space,
+            "syslog": text_space,
+            "web_log": text_space,
+            # Kernel event streams
+            "process_events": text_space,
+            "network_events": text_space,
+            "file_events": text_space,
+            # Lightweight numeric stats
+            "system_stats": spaces.Box(0, np.inf, shape=(3,), dtype=np.float32),
+        })
 
-        # Spaces
-        self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf,
-            shape=(self._feature_dim,), dtype=np.float32,
-        )
-        self.action_space = spaces.Discrete(1)  # Prediction-only: single no-op
+        # ── Action space ─────────────────────────────────────────────
+        self.action_space = spaces.Dict({
+            "action": spaces.Discrete(6),
+            "risk_score": spaces.Box(0.0, 10.0, shape=(1,), dtype=np.float32),
+        })
 
-        # State
+        # ── Internal state ───────────────────────────────────────────
         self._store: EventStore | None = None
         self._cursor: int = 0
         self._current_row: dict[str, Any] | None = None
@@ -80,21 +148,42 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self._batch_size: int = 1000
         self._exhausted: bool = False
 
+        # Ring buffers for each channel (tail of recent lines)
+        self._buffers: dict[str, collections.deque] = {}
+
+        # Defense state
+        self._blocked_ips: set[str] = set()
+        self._throttled_ips: set[str] = set()
+        self._is_isolated: bool = False
+        self._events_dropped: int = 0
+
+        # Ongoing consequence accumulator for blocked/throttled events
+        self._ongoing_reward: float = 0.0
+
+        # RNG for throttle probabilistic dropping
+        self._throttle_rng = np.random.default_rng()
+
     def _ensure_store(self) -> EventStore:
         if self._store is None:
             self._store = EventStore(self.db_path, mode="r")
         return self._store
 
+    def _init_buffers(self) -> None:
+        """Initialize empty ring buffers for each observation channel."""
+        self._buffers = {
+            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        }
+
     def _fetch_batch(self) -> None:
         """Fetch the next batch of events from the store."""
         store = self._ensure_store()
         self._batch = store.get_events(
-            start_id=self._cursor, limit=self._batch_size, sources=self.sources,
+            start_id=self._cursor, limit=self._batch_size,
         )
         self._batch_idx = 0
 
-    def _next_row(self) -> dict[str, Any] | None:
-        """Advance to the next event row, fetching batches as needed."""
+    def _next_raw_row(self) -> dict[str, Any] | None:
+        """Get the next raw row from the DB (before filtering)."""
         if self._batch_idx >= len(self._batch):
             self._fetch_batch()
             if not self._batch:
@@ -104,73 +193,192 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self._cursor = row["id"]
         return dict(row)
 
-    def _row_to_parsed_event(self, row: dict[str, Any]) -> ParsedEvent:
-        """Convert a database row back to a ParsedEvent for feature extraction."""
-        ts_str = row["timestamp"]
+    def _advance(self) -> dict[str, Any] | None:
+        """Advance to next visible event, applying blocklist/throttle/isolation.
+
+        Skipped events contribute to ongoing_reward (consequence feedback).
+        """
+        while True:
+            row = self._next_raw_row()
+            if row is None:
+                return None
+
+            src_ip = row.get("src_ip")
+            source = row.get("source", "")
+            is_network_event = source in (
+                "ebpf_network", "web_access", "web_error", "auth_log",
+            )
+
+            # Check isolation — blocks all network-originated events
+            if self._is_isolated and is_network_event:
+                self._events_dropped += 1
+                self._accumulate_consequence(row)
+                continue
+
+            # Check blocklist — 100% drop
+            if src_ip and src_ip in self._blocked_ips:
+                self._events_dropped += 1
+                self._accumulate_consequence(row)
+                continue
+
+            # Check throttle list — probabilistic drop
+            if src_ip and src_ip in self._throttled_ips:
+                if self._throttle_rng.random() < self.throttle_drop_rate:
+                    self._events_dropped += 1
+                    self._accumulate_consequence(row)
+                    continue
+
+            return row
+
+    def _accumulate_consequence(self, row: dict[str, Any]) -> None:
+        """Accumulate ongoing reward/penalty for dropped events."""
+        is_mal = row.get("is_malicious")
+        if is_mal == 1:
+            self._ongoing_reward += 0.05  # confirmed mitigation
+        elif is_mal == 0:
+            self._ongoing_reward -= 0.1  # service impact — legit user denied
+
+    def _route_event(self, source: str) -> str:
+        """Map event source to observation channel name."""
+        return _SOURCE_TO_CHANNEL.get(source, "syslog")
+
+    def _build_observation(self) -> dict[str, Any]:
+        """Build the observation dict from current ring buffers."""
+        obs: dict[str, Any] = {}
+        for ch in _CHANNELS:
+            lines = list(self._buffers.get(ch, []))
+            text = "\n".join(lines)
+            # Truncate to max_chars (keep most recent = end of string)
+            if len(text) > self.max_chars:
+                text = text[-self.max_chars:]
+            obs[ch] = text
+
+        # System stats: [load_avg, mem_used_frac, disk_used_frac]
+        # In replay mode these are synthetic/placeholder
+        obs["system_stats"] = np.array([0.5, 0.3, 0.2], dtype=np.float32)
+
+        return obs
+
+    def _empty_observation(self) -> dict[str, Any]:
+        """Build an empty observation for exhausted/reset states."""
+        obs: dict[str, Any] = {ch: "" for ch in _CHANNELS}
+        obs["system_stats"] = np.zeros(3, dtype=np.float32)
+        return obs
+
+    @staticmethod
+    def _ground_truth_risk(attack_stage: str | None) -> float:
+        """Map attack_stage to ground truth risk score [0, 10]."""
+        return _RISK_MAP.get(attack_stage, 0.0)
+
+    def _build_ground_truth(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Extract ground truth fields from a database row."""
+        is_mal = row.get("is_malicious")
+        attack_stage = row.get("attack_stage")
+        return {
+            "is_malicious": bool(is_mal) if is_mal is not None else False,
+            "attack_type": row.get("attack_type"),
+            "attack_stage": attack_stage,
+            "campaign_id": row.get("campaign_id"),
+            "true_risk": self._ground_truth_risk(attack_stage if is_mal else None),
+        }
+
+    def _compute_reward(
+        self,
+        action_dict: dict[str, Any],
+        ground_truth: dict[str, Any],
+    ) -> float:
+        """Compute combined reward: action + risk_score MSE + ongoing consequences."""
+        action = int(action_dict["action"])
+        risk_pred = float(action_dict["risk_score"][0])
+
+        # 1. Action reward (asymmetric)
+        is_mal = ground_truth["is_malicious"]
+        if is_mal:
+            action_reward = _ATTACK_REWARDS.get(action, 0.0)
+        else:
+            action_reward = _BENIGN_REWARDS.get(action, 0.0)
+
+        # 2. Risk score reward (negative MSE)
+        true_risk = ground_truth["true_risk"]
+        risk_reward = -0.1 * (risk_pred - true_risk) ** 2
+
+        # 3. Ongoing consequence reward (from dropped events since last step)
+        consequence_reward = self._ongoing_reward
+        self._ongoing_reward = 0.0  # reset accumulator
+
+        return action_reward + risk_reward + consequence_reward
+
+    def _apply_action(self, action_dict: dict[str, Any], src_ip: str | None) -> None:
+        """Apply the agent's action to update defense state."""
+        action = int(action_dict["action"])
+
+        if action == ACTION_THROTTLE and src_ip:
+            self._throttled_ips.add(src_ip)
+        elif action == ACTION_BLOCK_SOURCE and src_ip:
+            self._blocked_ips.add(src_ip)
+        elif action == ACTION_UNBLOCK and src_ip:
+            self._blocked_ips.discard(src_ip)
+            self._throttled_ips.discard(src_ip)
+        elif action == ACTION_ISOLATE:
+            self._is_isolated = True
+
+    def _build_info(
+        self,
+        row: dict[str, Any],
+        ground_truth: dict[str, Any],
+        dt: float,
+    ) -> dict[str, Any]:
+        """Build the info dict for a step."""
+        return {
+            "event_id": row["id"],
+            "timestamp": row["timestamp"],
+            "dt_seconds": dt,
+            "source": row.get("source", ""),
+            "src_ip": row.get("src_ip"),
+            "ground_truth": ground_truth,
+            "throttled_ips": sorted(self._throttled_ips),
+            "blocked_ips": sorted(self._blocked_ips),
+            "is_isolated": self._is_isolated,
+            "events_dropped": self._events_dropped,
+        }
+
+    def _parse_timestamp(self, row: dict[str, Any]) -> datetime:
+        """Parse timestamp from a DB row."""
+        ts_str = row.get("timestamp", "")
         try:
             ts = datetime.fromisoformat(ts_str)
         except ValueError:
             ts = datetime.now(timezone.utc)
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
+        return ts
 
-        parsed = json.loads(row["parsed"]) if row.get("parsed") else {}
-
-        return ParsedEvent(
-            timestamp=ts,
-            source=row["source"],
-            raw_line=row["raw_line"],
-            event_type=parsed.get("pattern", "other"),
-            fields=parsed,
-            src_ip=row.get("src_ip"),
-            username=row.get("username"),
-            service=row.get("service"),
-            session_id=row.get("session_id"),
-        )
-
-    def _extract_features(self, event: ParsedEvent, raw_line: str) -> np.ndarray:
-        if self.feature_mode == "event":
-            return self._extractor.extract(event)
-        elif self.feature_mode == "hashed":
-            return self._hasher.hash(raw_line)
-        raise ValueError(f"Unknown feature_mode: {self.feature_mode!r}")
-
-    @staticmethod
-    def _targets_for_info(targets: np.ndarray) -> np.ndarray:
-        """Replace NaN with INACTIVE_HEAD sentinel for info dict compatibility."""
-        return np.where(np.isnan(targets), INACTIVE_HEAD, targets).astype(np.float32)
-
-    def _build_ground_truth(self, row: dict[str, Any]) -> dict[str, Any] | None:
-        """Extract ground truth fields from a database row."""
-        if row.get("is_malicious") is None:
-            return None
-        return {
-            "is_malicious": row["is_malicious"],
-            "attack_type": row.get("attack_type"),
-            "attack_stage": row.get("attack_stage"),
-            "severity": row.get("severity"),
-        }
+    # ── Gymnasium interface ──────────────────────────────────────────
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None,
-    ) -> tuple[np.ndarray, dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         super().reset(seed=seed)
         options = options or {}
 
         self._ensure_store()
         self._exhausted = False
         self._prev_timestamp = None
+        self._init_buffers()
+
+        # Reset defense state
+        self._blocked_ips = set()
+        self._throttled_ips = set()
+        self._is_isolated = False
+        self._events_dropped = 0
+        self._ongoing_reward = 0.0
+
+        # Seed throttle RNG
+        self._throttle_rng = np.random.default_rng(seed)
 
         # Determine start position
         if "start_id" in options:
             self._cursor = int(options["start_id"])
-        elif "shuffle" in options and options["shuffle"]:
-            store = self._ensure_store()
-            n = store.count_events()
-            if n > 0:
-                self._cursor = int(self.np_random.integers(0, n))
-            else:
-                self._cursor = 0
         else:
             self._cursor = 0
 
@@ -179,94 +387,70 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self._batch_idx = 0
 
         # Fetch first event
-        row = self._next_row()
+        row = self._advance()
         if row is None:
             self._exhausted = True
-            obs = np.zeros(self._feature_dim, dtype=np.float32)
-            return obs, {"exhausted": True}
+            return self._empty_observation(), {"exhausted": True}
 
         self._current_row = row
-        event = self._row_to_parsed_event(row)
-        self._prev_timestamp = event.timestamp
-        obs = self._extract_features(event, row["raw_line"])
+        ts = self._parse_timestamp(row)
+        self._prev_timestamp = ts
 
+        # Add to ring buffer
+        channel = self._route_event(row.get("source", ""))
+        self._buffers[channel].append(row["raw_line"])
+
+        obs = self._build_observation()
         gt = self._build_ground_truth(row)
-        targets = self._target_builder.build_targets(gt)
-
-        info = {
-            "targets": self._targets_for_info(targets),
-            "ground_truth": gt,
-            "event_id": row["id"],
-            "timestamp": row["timestamp"],
-            "dt_seconds": 0.0,
-            "source": row["source"],
-            "raw_line": row["raw_line"],
-            "session_id": row.get("session_id"),
-            "campaign_id": row.get("campaign_id"),
-            "event_type": event.event_type,
-            "src_ip": event.src_ip,
-            "username": event.username,
-        }
+        info = self._build_info(row, gt, 0.0)
 
         return obs, info
 
     def step(
-        self, action: int,
-    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
-        row = self._next_row()
+        self, action: dict[str, Any],
+    ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
+        # Apply agent's action from previous observation
+        if self._current_row is not None:
+            src_ip = self._current_row.get("src_ip")
+            self._apply_action(action, src_ip)
+
+        # Advance to next visible event
+        row = self._advance()
 
         if row is None:
             self._exhausted = True
-            obs = np.zeros(self._feature_dim, dtype=np.float32)
-            info: dict[str, Any] = {
-                "targets": np.full(N_HEADS, INACTIVE_HEAD, dtype=np.float32),
-                "ground_truth": None,
-                "event_id": self._cursor,
-                "timestamp": "",
-                "dt_seconds": 0.0,
-                "source": "",
-                "raw_line": "",
-                "session_id": None,
-                "campaign_id": None,
-                "event_type": "",
-                "src_ip": None,
-                "username": None,
-            }
-            return obs, 0.0, False, True, info
+            obs = self._empty_observation()
+            gt = {"is_malicious": False, "attack_type": None,
+                  "attack_stage": None, "campaign_id": None, "true_risk": 0.0}
+            info = self._build_info(
+                {"id": self._cursor, "timestamp": "", "source": "", "src_ip": None},
+                gt, 0.0,
+            )
+            # Compute reward for the action on the last event
+            reward = self._compute_reward(action, gt)
+            return obs, reward, False, True, info
 
         self._current_row = row
-        event = self._row_to_parsed_event(row)
+        ts = self._parse_timestamp(row)
 
         # Compute dt
         dt = 0.0
         if self._prev_timestamp is not None:
-            dt = (event.timestamp - self._prev_timestamp).total_seconds()
-        self._prev_timestamp = event.timestamp
+            dt = (ts - self._prev_timestamp).total_seconds()
+        self._prev_timestamp = ts
 
-        # Features
-        obs = self._extract_features(event, row["raw_line"])
+        # Add to ring buffer
+        channel = self._route_event(row.get("source", ""))
+        self._buffers[channel].append(row["raw_line"])
 
-        # Targets
+        # Build observation
+        obs = self._build_observation()
+
+        # Ground truth and reward
         gt = self._build_ground_truth(row)
-        targets = self._target_builder.build_targets(gt)
+        reward = self._compute_reward(action, gt)
 
-        # Reward: is_malicious (0.0 or 1.0)
-        reward = float(row["is_malicious"]) if row.get("is_malicious") is not None else 0.0
-
-        info = {
-            "targets": self._targets_for_info(targets),
-            "ground_truth": gt,
-            "event_id": row["id"],
-            "timestamp": row["timestamp"],
-            "dt_seconds": dt,
-            "source": row["source"],
-            "raw_line": row["raw_line"],
-            "session_id": row.get("session_id"),
-            "campaign_id": row.get("campaign_id"),
-            "event_type": event.event_type,
-            "src_ip": event.src_ip,
-            "username": event.username,
-        }
+        info = self._build_info(row, gt, dt)
 
         return obs, reward, False, False, info
 
@@ -275,13 +459,19 @@ class SecurityLogStreamEnv(gymnasium.Env):
             return None
         row = self._current_row
         is_mal = row.get("is_malicious")
+        source = row.get("source", "")
         if is_mal == 1:
             prefix = "\033[91m[MALICIOUS]\033[0m"
         elif is_mal == 0:
             prefix = "\033[92m[BENIGN]\033[0m"
         else:
             prefix = "\033[93m[UNKNOWN]\033[0m"
-        return f"{prefix} {row['raw_line']}"
+
+        blocked = f" blocked={len(self._blocked_ips)}" if self._blocked_ips else ""
+        throttled = f" throttled={len(self._throttled_ips)}" if self._throttled_ips else ""
+        isolated = " [ISOLATED]" if self._is_isolated else ""
+
+        return f"{prefix} [{source}]{blocked}{throttled}{isolated} {row['raw_line']}"
 
     def close(self) -> None:
         if self._store is not None:

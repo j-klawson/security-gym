@@ -1,5 +1,10 @@
 """Session-aggregated feature extraction (20-dim).
 
+.. deprecated:: 0.3.0
+    The v1 environment presents raw text observations. The agent learns
+    its own representations. This module is retained for backwards
+    compatibility only.
+
 Maintains per-session state and produces a 20-dimensional feature vector
 per event. Raw counts are unnormalized — Alberta's online normalizer handles
 scaling during training.
