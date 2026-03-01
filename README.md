@@ -5,18 +5,76 @@
 [![Gymnasium](https://img.shields.io/badge/Gymnasium-%E2%89%A51.0.0-blue)](https://gymnasium.farama.org/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18810299.svg)](https://doi.org/10.5281/zenodo.18810299)
 
-Gymnasium-compatible environment that replays labeled Linux log streams for continual learning research. Scripted attacks mixed with real server traffic produce ground-truth-labeled data — no episodes, no resets, just a continuous stream of observations and multi-head prediction targets.
+Gymnasium-compatible environment for security defense research. The agent observes raw text streams — like `tail -N` on log files and kernel event channels — and takes defensive actions (block, throttle, alert, isolate) that causally affect future observations.
 
 Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-lived agents that continually learn from non-stationary sensory streams.
 
 ## Features
 
+- **Raw text observations** — 6 text channels (auth\_log, syslog, web\_log, process\_events, network\_events, file\_events) + numeric system stats. The agent learns its own representations.
+- **Defensive action space** — 6 actions (pass / alert / throttle / block\_source / unblock / isolate) + continuous risk score. Actions causally affect future observations.
+- **Asymmetric rewards** — blocking an attacker earns +1.0, blocking a legitimate user costs -1.0. Ongoing consequence feedback from blocked/throttled events accumulates between steps.
 - **Continuous stream** — `terminated` is always `False`; the log stream never ends (just like a real server)
-- **Multi-head targets** — 5 prediction heads (malicious?, attack type, attack stage, severity, session value) with NaN masking for inactive heads
-- **Three feature modes** — event (24-dim one-hot/cyclic), hashed (configurable MurmurHash3), session (20-dim with per-session state tracking)
-- **Composable wrappers** — `HashedFeatureWrapper`, `SessionAggregationWrapper`, `WindowedWrapper`, `DecayingTraceWrapper`
+- **eBPF kernel events** — process execution, network connections, and file access captured via BPF tracepoints. Mirrors how modern EDR agents work.
 - **Attack framework** — YAML-driven campaign orchestrator with 5 modules: SSH brute force, credential stuffing, Log4Shell, port scan, post-auth execution
 - **Stream composition** — offline mixing of benign + attack data with Poisson-scheduled campaigns and MITRE ATT&CK-weighted type distributions
+
+## Observation Space
+
+The agent sees the same data a security analyst would — raw log files and kernel event streams:
+
+```
+Dict({
+    "auth_log":         Text    # SSH auth events (tail of /var/log/auth.log)
+    "syslog":           Text    # System events (tail of /var/log/syslog)
+    "web_log":          Text    # Combined web access/error logs
+    "process_events":   Text    # eBPF: execve/exit/fork kernel events
+    "network_events":   Text    # eBPF: connect/accept/bind socket events
+    "file_events":      Text    # eBPF: open/write/unlink file events
+    "system_stats":     Box(3)  # [load_avg, mem_used_frac, disk_used_frac]
+})
+```
+
+Each text channel is a ring buffer of recent lines (configurable `tail_lines` and `max_chars`), updated on every step.
+
+## Action Space
+
+```
+Dict({
+    "action":     Discrete(6)   # 0=pass, 1=alert, 2=throttle, 3=block_source, 4=unblock, 5=isolate
+    "risk_score": Box(0, 10)    # Agent's estimate of current threat level (auxiliary prediction)
+})
+```
+
+| Action | Effect |
+|--------|--------|
+| `pass` | Continue monitoring |
+| `alert` | Flag for human review |
+| `throttle` | Rate-limit source IP (~90% drop) |
+| `block_source` | Add source IP to firewall blocklist (100% drop) |
+| `unblock` | Remove source IP from blocklist/throttle list |
+| `isolate` | Quarantine server (block all network events) |
+
+IP-targeted actions use the current event's source IP. The agent can escalate and de-escalate: throttle -> block -> unblock.
+
+## Reward Function
+
+Three components combined:
+
+**Action reward** (asymmetric — mistakes in both directions are costly):
+
+| Action | During Attack | During Benign |
+|--------|--------------|---------------|
+| `block_source` | +1.0 | -1.0 |
+| `throttle` | +0.75 | -0.5 |
+| `alert` | +0.5 | -0.3 |
+| `pass` | -0.5 | 0.0 |
+| `isolate` | +0.25 | -2.0 |
+| `unblock` | -0.5 | 0.0 |
+
+**Risk score MSE**: `-0.1 * (predicted_risk - true_risk)^2` — penalizes inaccurate threat assessment.
+
+**Ongoing consequences**: blocked/throttled events accumulate reward between steps (+0.05 per blocked attack event, -0.1 per blocked benign event). The agent feels the sustained cost of false positives.
 
 ## Supported Attacks
 
@@ -31,7 +89,7 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 | `privilege_escalation` | — | — | TA0004 — Privilege Escalation | Planned |
 | `exfiltration` | — | — | TA0010 — Exfiltration | Planned |
 
-The first five attacks have implemented modules and campaign configs (including a full kill chain campaign: recon -> credential stuffing -> post-auth execution). The remaining three are defined in the target taxonomy (Head 1 of the multi-head target system) for future expansion.
+The first five attacks have implemented modules and campaign configs (including a full kill chain campaign: recon -> credential stuffing -> post-auth execution).
 
 ## Install
 
@@ -77,69 +135,67 @@ Or manually download `campaigns.db` from the [Releases page](https://github.com/
 
 ```python
 import gymnasium as gym
+import numpy as np
 import security_gym
 
-env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db")
+env = gym.make("SecurityLogStream-v1", db_path="data/campaigns.db")
 obs, info = env.reset()
 
+# obs is a dict of text channels + system stats
+print(obs["auth_log"][:200])   # Raw auth log lines
+print(obs["system_stats"])     # [load_avg, mem_used, disk_used]
+
 while True:
-    obs, reward, terminated, truncated, info = env.step(0)
+    # Choose an action
+    action = {
+        "action": 0,  # pass (monitor only)
+        "risk_score": np.array([0.0], dtype=np.float32),
+    }
 
-    # Multi-head targets for supervised learning
-    targets = info["targets"]      # shape (5,), -1.0 = inactive head
-    is_malicious = targets[0]      # 0.0 = benign, 1.0 = malicious
+    obs, reward, terminated, truncated, info = env.step(action)
 
-    # Rich metadata
-    print(f"{info['timestamp']} | {info['event_type']:20s} | "
-          f"src={info['src_ip']}  user={info['username']}")
+    # Ground truth (for evaluation, not visible to agent)
+    gt = info["ground_truth"]
+    print(f"{info['timestamp']} | malicious={gt['is_malicious']} | "
+          f"risk={gt['true_risk']:.1f} | reward={reward:.2f}")
 
     if truncated:  # End of data
         break
 ```
 
-### Feature Modes
-
-The environment supports three feature representations:
+### Defensive Actions
 
 ```python
-# Event features (24-dim): one-hot source/event_type + cyclic time + binary flags
-env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db", feature_mode="event")
+import numpy as np
 
-# Hashed features (configurable dim): MurmurHash3 of raw log text
-env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db",
-               feature_mode="hashed", hash_dim=512)
+# Block the current event's source IP (100% drop)
+block = {"action": 3, "risk_score": np.array([8.0], dtype=np.float32)}
+
+# Throttle (90% drop rate)
+throttle = {"action": 2, "risk_score": np.array([5.0], dtype=np.float32)}
+
+# Alert with high risk estimate
+alert = {"action": 1, "risk_score": np.array([7.0], dtype=np.float32)}
+
+# Undo a block (correct false positive)
+unblock = {"action": 4, "risk_score": np.array([1.0], dtype=np.float32)}
+
+# Quarantine server (blocks all network events)
+isolate = {"action": 5, "risk_score": np.array([10.0], dtype=np.float32)}
 ```
 
-### Composing Wrappers
-
-Wrappers stack like any Gymnasium wrappers:
-
-```python
-from security_gym.envs.wrappers import (
-    SessionAggregationWrapper,
-    WindowedWrapper,
-    DecayingTraceWrapper,
-)
-
-# Session features (20-dim) with per-IP/session state tracking
-env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db")
-env = SessionAggregationWrapper(env)
-
-# Sliding window: stack last 10 observations into a flat vector
-env = WindowedWrapper(env, window_size=10)  # 20 * 10 = 200-dim
-
-# Or use decaying traces for eligibility-trace-style accumulation
-env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db")
-env = DecayingTraceWrapper(env, lambda_=0.95)
-```
+After blocking an IP, future events from that IP are silently dropped. The agent observes the absence of those events and receives ongoing consequence feedback:
+- Dropped attack events: +0.05 per event (confirmed mitigation)
+- Dropped benign events: -0.1 per event (service impact)
 
 ### ANSI Rendering
 
 ```python
-env = gym.make("SecurityLogStream-v0", db_path="data/campaigns.db", render_mode="ansi")
+env = gym.make("SecurityLogStream-v1", db_path="data/campaigns.db", render_mode="ansi")
 obs, info = env.reset()
 for _ in range(20):
-    obs, reward, terminated, truncated, info = env.step(0)
+    action = {"action": 0, "risk_score": np.array([0.0], dtype=np.float32)}
+    obs, reward, terminated, truncated, info = env.step(action)
     print(env.render())  # Color-coded: red=malicious, green=benign
 ```
 
@@ -150,38 +206,23 @@ For direct integration with learning frameworks (bypasses Gymnasium overhead):
 ```python
 from security_gym.adapters.scan_stream import SecurityGymStream
 
-stream = SecurityGymStream("data/campaigns.db", feature_mode="event")
+stream = SecurityGymStream("data/campaigns.db")
 
-# Batch: load everything into arrays
-obs, targets = stream.collect_numpy()        # (N, 24), (N, 5)
-print(f"{len(stream)} events, {stream.feature_dim}-dim features, {stream.n_heads} heads")
+# Batch: load all observations and ground truth
+observations, ground_truths = stream.collect_numpy()
+# observations: list of dicts (one per event, each with text channels + system_stats)
+# ground_truths: list of dicts (is_malicious, attack_type, true_risk, ...)
 
 # Constant-memory streaming
-for obs_batch, tgt_batch in stream.iter_batches(size=1000):
-    print(obs_batch.shape, tgt_batch.shape)  # (1000, 24), (1000, 5)
+for obs_batch, gt_batch in stream.iter_batches(size=1000):
+    for obs, gt in zip(obs_batch, gt_batch):
+        print(obs["auth_log"][:80], gt["is_malicious"])
 
-# JAX arrays (requires pip install security-gym[alberta])
-obs_jax, tgt_jax = stream.collect()          # jnp.ndarray if JAX available
-
-# Server-speed evaluation mode
+# Server-speed evaluation mode (never-ending, paced stream)
 stream = SecurityGymStream("data/campaigns.db", speed=10.0, loop=True)
-for timestep in stream:  # Never-ending, 10x realtime pacing
+for timestep in stream:  # Requires JAX
     ...
 ```
-
-## Multi-Head Target System
-
-Each event produces a 5-head target array for multi-task continual learning:
-
-| Head | Name | Type | Range | Description |
-|------|------|------|-------|-------------|
-| 0 | `is_malicious` | binary | {0, 1} | Benign vs. malicious |
-| 1 | `attack_type` | categorical | [0, 1] | brute_force, web_exploit, discovery, ... (8 types) |
-| 2 | `attack_stage` | ordinal | [0, 1] | recon → initial_access → execution → persistence → exfiltration |
-| 3 | `severity` | ordinal | [0, 1] | 0 (info) to 3 (critical) |
-| 4 | `session_value` | continuous | [0, 1] | Scaled session value |
-
-Inactive heads use `NaN` internally (or `-1.0` in the Gymnasium info dict). This lets learners like [alberta-framework](https://github.com/j-klawson/alberta-framework)'s `MultiHeadMLPLearner` skip gradient updates for heads without labels.
 
 ## Generating Data
 
@@ -213,6 +254,9 @@ campaign:
     host: 192.168.2.201
     ssh_user: researcher
     ssh_key: ~/.ssh/isildur_research
+  collection:
+    ebpf:
+      enabled: true           # Collect kernel events via eBPF
   phases:
     - name: "SSH Brute Force"
       module: ssh_brute_force
@@ -280,18 +324,18 @@ security-gym/
 ├── src/security_gym/          # Installable package
 │   ├── adapters/              # SecurityGymStream (batch/streaming adapter)
 │   ├── data/                  # EventStore (SQLite), StreamComposer
-│   ├── envs/                  # SecurityLogStreamEnv, wrappers
-│   ├── features/              # Event (24-dim), hashed, session (20-dim) extractors
-│   ├── parsers/               # auth_log, syslog, web_access, web_error, journal
-│   └── targets/               # Multi-head target builder
+│   ├── envs/                  # SecurityLogStreamEnv (v1), deprecated wrappers
+│   ├── features/              # Deprecated (v0 numeric extractors)
+│   ├── parsers/               # auth_log, syslog, web_access, web_error, journal, ebpf
+│   └── targets/               # Deprecated (v0 multi-head target builder)
 ├── attacks/                   # Attack framework (NOT pip-installed)
 │   ├── modules/               # recon, ssh_brute_force, credential_stuffing, ssh_post_auth, log4shell
-│   ├── collection/            # SSH/SFTP log collector, benign log importer
+│   ├── collection/            # SSH/SFTP log collector, benign log importer, eBPF orchestrator
 │   ├── labeling/              # Time+IP campaign labeler
 │   └── tests/                 # Attack framework tests
 ├── campaigns/                 # YAML campaign configs
 ├── configs/                   # YAML composition configs
-├── server/                    # Target VM provisioning docs
+├── server/                    # Target VM provisioning docs, eBPF collector daemon
 └── tests/                     # Core package tests
 ```
 
@@ -299,7 +343,7 @@ security-gym/
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/                     # Core tests (226 tests)
+pytest tests/                     # Core tests (227 tests)
 pytest attacks/tests/             # Attack framework tests (90 tests)
 ruff check src/ tests/ attacks/   # Lint
 ```
@@ -309,6 +353,10 @@ ruff check src/ tests/ attacks/   # Lint
 - Python >= 3.11
 - gymnasium >= 1.0.0
 - numpy >= 1.24.0
+
+## Author
+
+Keith Lawson
 
 ## License
 
