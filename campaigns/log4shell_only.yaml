@@ -40,6 +40,9 @@ campaign:
         delay_after_seconds: 0
 
   collection:
+    ebpf:
+      enabled: true
+      baseline_seconds: 30
     log_sources:
       - name: web_access
         parser: web_access
@@ -54,5 +57,5 @@ campaign:
         parser: auditd
         remote_command: "sudo -n ausearch -k research_exploit --raw"
     output:
-      db_path: data/campaigns.db
+      db_path: data/campaigns_v2.db
       time_buffer_seconds: 60

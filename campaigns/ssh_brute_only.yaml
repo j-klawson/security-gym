@@ -38,6 +38,9 @@ campaign:
         jitter_ms: [200, 800]
 
   collection:
+    ebpf:
+      enabled: true
+      baseline_seconds: 30
     log_sources:
       - name: auth_log
         parser: auth_log
@@ -49,5 +52,5 @@ campaign:
         parser: journal
         remote_command: "journalctl --since '1 hour ago' -o json"
     output:
-      db_path: data/campaigns.db
+      db_path: data/campaigns_v2.db
       time_buffer_seconds: 60

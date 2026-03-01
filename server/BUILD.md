@@ -67,7 +67,46 @@ Rules added to `/etc/audit/rules.d/security_gym.rules` to track process executio
 `-w /bin/sh -p x -k research_exploit`
 `-w /bin/bash -p x -k research_exploit`
 
-## 5. Active Vulnerabilities
+## 5. eBPF Kernel Event Collection (V2)
+
+BCC-based eBPF collector attaches to kernel tracepoints (execve, connect, accept, openat, unlinkat) to capture process, network, and file events.
+
+### Installation
+
+```bash
+ssh keith@192.168.2.201
+sudo apt install bpfcc-tools python3-bpfcc linux-headers-$(uname -r)
+sudo apt-mark hold bpfcc-tools python3-bpfcc
+```
+
+### Sudoers Rules
+
+Add to `/etc/sudoers.d/researcher_ebpf`:
+
+```
+researcher ALL=(root) NOPASSWD: /usr/bin/python3 /tmp/security_gym_ebpf_collector.py *
+researcher ALL=(root) NOPASSWD: /usr/bin/pkill -f security_gym_ebpf_collector*
+```
+
+### Manual Test
+
+```bash
+ssh researcher@192.168.2.201
+sudo python3 /tmp/security_gym_ebpf_collector.py --output /tmp/test_ebpf.log &
+sleep 10
+sudo pkill -f security_gym_ebpf_collector
+cat /tmp/test_ebpf.log | head -20
+```
+
+### V2 Snapshot
+
+After verifying eBPF collection works, create a new golden state on Frodo:
+
+```
+virsh snapshot-create-as isildur --name "ISILDUR_READY_V2" --description "BCC/eBPF kernel event collection"
+```
+
+## 6. Active Vulnerabilities
 
 **Log4Shell (CVE-2021-44228)**
 Hosted via Docker Compose in `~/research/log4j/`.
@@ -75,7 +114,7 @@ Hosted via Docker Compose in `~/research/log4j/`.
 - Target Port: 8080
 - Log Source: JSON-file driver via Docker logs.
 
-## 6. Snapshot Management
+## 7. Snapshot Management
 
 The "Golden State" snapshot was created on Frodo immediately after provisioning:
 

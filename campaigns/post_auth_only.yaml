@@ -40,6 +40,9 @@ campaign:
         jitter_ms: [2000, 5000]
 
   collection:
+    ebpf:
+      enabled: true
+      baseline_seconds: 30
     log_sources:
       - name: auth_log
         parser: auth_log
@@ -54,5 +57,5 @@ campaign:
         parser: auditd
         remote_command: "sudo -n ausearch -k research_exploit --raw"
     output:
-      db_path: data/campaigns.db
+      db_path: data/campaigns_v2.db
       time_buffer_seconds: 60

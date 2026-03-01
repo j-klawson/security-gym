@@ -12,10 +12,10 @@ stream:
   seed: 42
 
   benign:
-    db: ../data/benign.db            # Hopper server logs — cycled to fill duration
+    db: ../data/benign_v2.db         # Hopper server logs + eBPF baseline — cycled to fill duration
 
   attacks:
-    db: ../data/campaigns.db         # Attack event templates from Isildur campaigns
+    db: ../data/campaigns_v2.db      # Attack event templates from Isildur campaigns (with eBPF)
 
     # Poisson process rate for campaign scheduling
     campaigns_per_day: 3.0

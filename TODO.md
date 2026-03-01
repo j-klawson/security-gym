@@ -37,6 +37,23 @@ Current action items for security-gym development.
 - [x] Re-compose all experiment streams with new attack types and scrubbed data
 - [ ] Publish updated dataset to GitHub Releases (v0.2.0-data: campaigns.db + benign.db)
 
+## Phase 9 — eBPF / v2 Data Collection
+
+- [x] Fix eBPF labeling bug — route kernel events through CampaignLabeler instead of hardcoded benign
+- [x] Add `ebpf: {enabled: true, baseline_seconds: 30}` to all 7 campaign YAMLs
+- [x] Update campaign YAMLs to write to `data/campaigns_v2.db`
+- [x] Update all 4 composition configs to read from `benign_v2.db` and `campaigns_v2.db`
+- [x] Document BCC install, sudoers, and V2 snapshot in `server/BUILD.md`
+- [x] Create `scripts/collect_ebpf_baseline.py` for benign eBPF baseline collection
+- [ ] Install BCC on Isildur (`sudo apt install bpfcc-tools python3-bpfcc linux-headers-$(uname -r)`)
+- [ ] Add sudoers rules for researcher (eBPF collector + pkill)
+- [ ] Create ISILDUR_READY_V2 snapshot on Frodo
+- [ ] Collect benign eBPF baseline: `python scripts/collect_ebpf_baseline.py --duration 3600`
+- [ ] Re-run all 7 campaigns with eBPF: `sudo python -m attacks run campaigns/<name>.yaml`
+- [ ] Validate v2 labels: `python scripts/validate_labels.py data/campaigns_v2.db -v`
+- [ ] Re-compose experiment streams from v2 databases
+- [ ] Publish v2 dataset to GitHub Releases
+
 ## Phase 6 — Experiments
 
 - [ ] Wire SecurityGymStream into alberta-framework's `run_multi_head_learning_loop()`

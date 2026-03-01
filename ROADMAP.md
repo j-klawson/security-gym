@@ -89,12 +89,22 @@ Extend security-gym with benign and attack NetFlow data generation. Attack traff
 - StreamComposer support for mixed log + NetFlow experiment streams
 - Evaluate whether metadata-only features are sufficient for detection without payload inspection
 
-## Phase 9 — Kernel Event Telemetry (Future)
+## Phase 9 — Kernel Event Telemetry (In Progress)
 
 Hook the RL agent directly into the Linux kernel for real-time observation of system-level events. Moves beyond log parsing to native kernel telemetry — the agent observes syscalls, process creation, file access, and network connections as they happen. This is the path toward an agent that can detect and respond to threats at the OS level rather than after the fact in log files.
 
-- eBPF-based event collection (syscalls, process exec, file open, network connect)
-- Kernel event parser and feature extractor
+- [x] eBPF-based event collection daemon (`server/ebpf_collector.py`, BCC tracepoints)
+- [x] eBPF event parser and orchestration wrapper (`attacks/collection/ebpf_collector.py`)
+- [x] eBPF labeling fix — kernel events during attack windows correctly labeled malicious via CampaignLabeler
+- [x] All campaign YAMLs updated with `ebpf: {enabled: true, baseline_seconds: 30}`
+- [x] Benign eBPF baseline collection script (`scripts/collect_ebpf_baseline.py`)
+- [x] BUILD.md updated with BCC install, sudoers, V2 snapshot procedure
+- [x] Composition configs updated for v2 databases (benign_v2.db, campaigns_v2.db)
+- [ ] Install BCC on Isildur and create ISILDUR_READY_V2 snapshot
+- [ ] Collect benign eBPF baseline (~1 hour)
+- [ ] Re-run all campaigns with eBPF collection enabled
+- [ ] Re-compose experiment streams from v2 databases
+- [ ] Validate v2 label accuracy
 - Attack campaigns that generate kernel-level telemetry (privilege escalation, rootkits, fileless malware)
 - Real-time streaming from kernel to agent (low-latency path, not log-based)
 - Integration with existing log + NetFlow streams for multi-modal observation

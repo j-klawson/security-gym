@@ -280,11 +280,20 @@ class CampaignOrchestrator:
             # Bulk insert log events with ground truth
             count = store.bulk_insert(events, ground_truths)
 
-            # Insert eBPF kernel events (labeled as benign baseline)
+            # Insert eBPF kernel events (labeled via CampaignLabeler)
             if ebpf_events:
-                ebpf_gts = [{"is_malicious": 0, "severity": 0}] * len(ebpf_events)
+                ebpf_labeler = CampaignLabeler(
+                    campaign_id=self.campaign_id,
+                    attack_results=self._results,
+                    phase_configs=self.config.phases,
+                )
+                ebpf_gts = ebpf_labeler.label_all(ebpf_events)
                 ebpf_count = store.bulk_insert(ebpf_events, ebpf_gts)
-                logger.info("Stored %d eBPF kernel events", ebpf_count)
+                ebpf_stats = ebpf_labeler.stats
+                logger.info(
+                    "Stored %d eBPF events (%d malicious, %d benign)",
+                    ebpf_count, ebpf_stats["malicious"], ebpf_stats["benign"],
+                )
                 count += ebpf_count
 
         logger.info("Stored %d total events + campaign record", count)

@@ -20,10 +20,10 @@ stream:
   seed: 2026
 
   benign:
-    db: ../data/benign.db
+    db: ../data/benign_v2.db
 
   attacks:
-    db: ../data/campaigns.db
+    db: ../data/campaigns_v2.db
 
     # ~2.5 campaigns/day — realistic for an internet-facing server
     # with SSH exposed. Produces ~912 campaigns/year.

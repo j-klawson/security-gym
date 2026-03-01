@@ -29,9 +29,10 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 - **StreamComposer**: offline composition of benign + attack EventStore DBs into experiment streams (`data/composer.py`). Handles both log and eBPF events (all use same events table). YAML config specifies duration, seed, Poisson attack schedule (`campaigns_per_day`), and MITRE ATT&CK-weighted type distribution. Cycles benign events to fill duration, transplants attack sessions preserving intra-session timing. Deterministic given seed.
 - **Registration**: belt+suspenders — `__init__.py` calls `register_envs()` on import AND `pyproject.toml` entry point for auto-discovery
 - **Attack Modules**: decorator-based registry (`@AttackModuleRegistry.register('ssh_brute_force')`); five modules: `recon` (scapy SYN scan), `ssh_brute_force` (paramiko), `log4shell` (requests + JNDI injection), `credential_stuffing` (paramiko, unique cred pairs tried once each), `ssh_post_auth` (paramiko, post-auth command execution with 4 command profiles + optional payload download). Non-stationary `TimingProfile` with constant/accelerating/decelerating/custom profiles. Full kill chain campaign: recon → credential stuffing → post-auth execution.
-- **Campaign Framework**: YAML-driven orchestrator — load config → start eBPF collector (if enabled) → execute phases → stop eBPF → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules/compose`. eBPF collection configured via `collection.ebpf.enabled: true` in campaign YAML.
+- **Campaign Framework**: YAML-driven orchestrator — load config → start eBPF collector (if enabled) → execute phases → stop eBPF → SSH collect logs → label (time+IP matching) → bulk insert into EventStore. CLI: `python -m attacks run/validate/list-modules/compose`. eBPF collection configured via `collection.ebpf.enabled: true` in campaign YAML. eBPF events are routed through the same `CampaignLabeler` as log events (time+IP matching), so kernel events during attack windows are correctly labeled malicious.
 - **Label Validation**: `scripts/validate_labels.py` — 9 checks (label consistency, raw line spot-checks, campaign boundaries, campaign type cross-val, target array NaN masking, attack type distribution, temporal order, no unlabeled events, session coherence). Supports `--check NAME` to run subset, `--spot-check N`, `--sample-size N`, `--verbose`. Exit 0 = all pass/skip, exit 1 = any FAIL. Distribution check is WARN-only (campaign weights control frequency, not event count — brute_force generates ~40x more events per campaign than discovery).
 - **Deprecated (v0)**: Feature extractors (`features/extractors.py`, `features/hasher.py`, `features/session.py`), wrappers (`envs/wrappers.py`), and target builder (`targets/builder.py`) are retained for backwards compatibility but no longer used by the v1 environment. The agent now learns its own representations from raw text.
+- **Data Versions**: v1 databases (`benign.db`, `campaigns.db`) contain log events only. v2 databases (`benign_v2.db`, `campaigns_v2.db`) add eBPF kernel events. Composition configs and campaign YAMLs point at v2 databases. Benign eBPF baseline collected via `scripts/collect_ebpf_baseline.py`.
 - **Known Data Quality**: campaigns.db has 87 temporal order violations (multi-server import boundary) and 6 mixed-label sessions (labeler edge cases). Composed experiment streams are clean — StreamComposer sorts by timestamp. benign.db shares the temporal order issue.
 - **CI**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main
 
@@ -52,6 +53,7 @@ python -m attacks compose configs/stream_90d_mixed.yaml  # Compose experiment st
 python -m attacks compose configs/stream_90d_mixed.yaml --dry-run  # Preview composition
 python scripts/validate_labels.py data/campaigns.db -v            # Validate label accuracy
 python scripts/validate_labels.py data/exp01_90d.db --spot-check 20  # Spot-check composed stream
+python scripts/collect_ebpf_baseline.py --duration 3600            # Collect benign eBPF baseline
 python -m build                   # Build wheel
 ```
 
@@ -64,7 +66,7 @@ python -m build                   # Build wheel
 - **Log sources:** auth.log, syslog, nginx access/error logs, journalctl, Docker JSON logs
 - **eBPF:** BCC-based kernel event collection (requires `bpfcc-tools python3-bpfcc linux-headers`). Collector daemon at `server/ebpf_collector.py`.
 - **Ground truth:** auditd rules track wget/curl/sh/bash execution with `research_exploit` key; researcher has NOPASSWD sudo for `ausearch`
-- **Snapshot:** `ISILDUR_READY_V1` golden state on Frodo (needs `ISILDUR_READY_V2` after BCC install)
+- **Snapshots:** `ISILDUR_READY_V1` golden state on Frodo; `ISILDUR_READY_V2` after BCC install + eBPF sudoers (see `server/BUILD.md` section 5)
 
 ## Sibling Projects
 

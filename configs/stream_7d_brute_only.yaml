@@ -11,10 +11,10 @@ stream:
   seed: 123
 
   benign:
-    db: ../data/benign.db
+    db: ../data/benign_v2.db
 
   attacks:
-    db: ../data/campaigns.db
+    db: ../data/campaigns_v2.db
     campaigns_per_day: 1.0
 
     distribution:
