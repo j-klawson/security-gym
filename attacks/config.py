@@ -180,7 +180,7 @@ class CollectionConfig:
     """Post-campaign log collection settings."""
 
     log_sources: list[LogSourceConfig]
-    db_path: str = "data/campaigns.db"
+    db_path: str = "data/campaigns_v2.db"
     time_buffer_seconds: int = 60
     ebpf: EbpfConfig = None  # type: ignore[assignment]
 
@@ -270,7 +270,7 @@ def _parse_collection(raw: dict[str, Any]) -> CollectionConfig:
     ) if ebpf_raw else EbpfConfig()
     return CollectionConfig(
         log_sources=[_parse_log_source(s) for s in raw.get("log_sources", [])],
-        db_path=output.get("db_path", "data/campaigns.db"),
+        db_path=output.get("db_path", "data/campaigns_v2.db"),
         time_buffer_seconds=output.get("time_buffer_seconds", 60),
         ebpf=ebpf,
     )
