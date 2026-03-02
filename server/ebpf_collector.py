@@ -20,7 +20,7 @@ import signal
 import struct
 import sys
 import time
-from ctypes import c_char, c_int, c_uint, c_uint16, c_uint32, c_ulonglong
+from ctypes import c_char, c_uint
 from datetime import datetime, timezone
 
 try:

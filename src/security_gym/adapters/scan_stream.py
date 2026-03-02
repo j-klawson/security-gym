@@ -194,15 +194,17 @@ class SecurityGymStream:
 
     def collect_numpy(
         self, limit: int | None = None,
-    ) -> tuple[dict[str, list], list[dict[str, Any]]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Collect all events as observation dicts + ground truth lists.
 
         Returns:
-            (observations, ground_truths) where observations is a dict
-            mapping channel names to lists of strings, and ground_truths
-            is a list of ground truth dicts.
+            (observations, ground_truths) where observations is a list
+            of observation dicts, and ground_truths is a list of ground
+            truth dicts.
         """
-        buffers = {ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS}
+        buffers: dict[str, collections.deque[str]] = {
+            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        }
         observations: list[dict[str, Any]] = []
         ground_truths: list[dict[str, Any]] = []
 
@@ -233,7 +235,9 @@ class SecurityGymStream:
 
         Each batch contains lists of observation dicts and ground truth dicts.
         """
-        buffers = {ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS}
+        buffers: dict[str, collections.deque[str]] = {
+            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        }
         obs_buf: list[dict[str, Any]] = []
         gt_buf: list[dict[str, Any]] = []
 
@@ -259,7 +263,9 @@ class SecurityGymStream:
                 "JAX is required for the iterator interface. "
                 "Install with: pip install 'security-gym[alberta]'"
             )
-        buffers = {ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS}
+        buffers: dict[str, collections.deque[str]] = {
+            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        }
         for row in self._iter_rows():
             channel = self._route_event(row.get("source", ""))
             buffers[channel].append(row["raw_line"])

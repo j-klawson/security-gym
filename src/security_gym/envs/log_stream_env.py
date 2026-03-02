@@ -299,7 +299,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
             action_reward = _BENIGN_REWARDS.get(action, 0.0)
 
         # 2. Risk score reward (negative MSE)
-        true_risk = ground_truth["true_risk"]
+        true_risk = float(ground_truth["true_risk"])
         risk_reward = -0.1 * (risk_pred - true_risk) ** 2
 
         # 3. Ongoing consequence reward (from dropped events since last step)

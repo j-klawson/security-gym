@@ -279,7 +279,7 @@ class EbpfOrchestrator:
 
         # Signal the collector to stop
         self._exec_command(
-            f"sudo /usr/bin/pkill -f security_gym_ebpf_collector || true"
+            "sudo /usr/bin/pkill -f security_gym_ebpf_collector || true"
         )
         logger.info("eBPF collector stopped on %s", self.host)
 
