@@ -85,5 +85,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] Comprehensive README with quick start, feature docs, dataset download
 - [x] `security-gym` CLI for dataset download from GitHub Releases
 - [x] Zenodo DOI badge and archive
+- [x] Code quality pass — ruff auto-fixes (unused imports, f-string), mypy type annotations (scan_stream buffers, collect_numpy return type, float cast in reward), all zero errors
+- [x] Update default `db_path` fallback in `attacks/config.py` from `campaigns.db` to `campaigns_v2.db`
 - [ ] Document dataset schema and labeling methodology
 - [ ] Investigate auditd timeout through paramiko (2-minute hang on `ausearch --raw`)
