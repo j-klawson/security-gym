@@ -132,11 +132,13 @@ Publish `security-gym` to PyPI as a `0.x` alpha package (API may change). Packag
 - No hardcoded paths — all defaults overridable
 
 **Remaining steps:**
-- [ ] Add `src/security_gym/py.typed` marker (empty file for type checker discovery)
-- [ ] Delete stale `dist/` (v0.1.0 wheels, missing 9 source files added since)
-- [ ] Bump version if needed (`git tag --sort=-v:refname | head -5` to check)
-- [ ] Rebuild: `python -m build`
-- [ ] Test install from wheel in clean venv, verify imports + CLI + `gym.make()`
+- [x] Add `src/security_gym/py.typed` marker (empty file for type checker discovery)
+- [x] Delete stale `dist/` (v0.1.0 wheels, missing 9 source files added since)
+- [x] Bump version if needed (`git tag --sort=-v:refname | head -5` to check) — already at v0.3.0
+- [x] Rebuild: `python -m build` — v0.3.0 wheel verified
+- [x] Test install from wheel in clean venv, verify imports + CLI + `gym.make()`
+- [x] GitHub Actions publish workflow (OIDC trusted publishing: build → TestPyPI → PyPI on `v*` tags)
+- [ ] Configure `testpypi` and `pypi` environments in GitHub repo settings (trusted publisher)
 - [ ] Publish to TestPyPI first, then PyPI
 
 ## Phase 10 — Analysis & Publication (Future)
