@@ -254,7 +254,7 @@ campaign:
   target:
     host: 192.168.2.201
     ssh_user: researcher
-    ssh_key: ~/.ssh/isildur_research
+    ssh_key: ~/.ssh/your_public_key
   collection:
     ebpf:
       enabled: true           # Collect kernel events via eBPF
