@@ -138,8 +138,9 @@ Publish `security-gym` to PyPI as a `0.x` alpha package (API may change). Packag
 - [x] Rebuild: `python -m build` — v0.3.0 wheel verified
 - [x] Test install from wheel in clean venv, verify imports + CLI + `gym.make()`
 - [x] GitHub Actions publish workflow (OIDC trusted publishing: build → TestPyPI → PyPI on `v*` tags)
-- [ ] Configure `testpypi` and `pypi` environments in GitHub repo settings (trusted publisher)
-- [ ] Publish to TestPyPI first, then PyPI
+- [x] Configure `testpypi` and `pypi` environments in GitHub repo settings (trusted publisher)
+- [x] Publish to TestPyPI (v0.3.0 test, v0.3.1 full pipeline)
+- [x] Publish to PyPI — v0.3.1 live at https://pypi.org/project/security-gym/
 
 ## Phase 10 — Analysis & Publication (Future)
 

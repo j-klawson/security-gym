@@ -79,6 +79,16 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [ ] Add authentication and rate limiting
 - [ ] Support multiple concurrent consumers on a single composed stream
 
+## PyPI Publication ✅
+
+- [x] Add `src/security_gym/py.typed` marker (PEP 561)
+- [x] Delete stale `dist/` (v0.1.0 artifacts)
+- [x] Create `.github/workflows/publish.yml` (OIDC trusted publishing: build → TestPyPI → PyPI on `v*` tags)
+- [x] Configure GitHub environments (`testpypi`, `pypi`) with trusted publishers
+- [x] Test publish to TestPyPI (v0.3.0)
+- [x] Publish v0.3.1 to PyPI — https://pypi.org/project/security-gym/
+- [x] Add PyPI badge to README
+
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios

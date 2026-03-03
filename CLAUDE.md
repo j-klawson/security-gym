@@ -34,7 +34,8 @@ See `ROADMAP.md` for project phases and `TODO.md` for current action items.
 - **Deprecated (v0)**: Feature extractors (`features/extractors.py`, `features/hasher.py`, `features/session.py`), wrappers (`envs/wrappers.py`), and target builder (`targets/builder.py`) are retained for backwards compatibility but no longer used by the v1 environment. The agent now learns its own representations from raw text.
 - **Data Versions**: v1 databases (`benign.db`, `campaigns.db`) contain log events only. v2 databases (`benign_v2.db`, `campaigns_v2.db`) add eBPF kernel events. Composition configs, campaign YAMLs, and config defaults all point at v2 databases. Benign eBPF baseline collected via `scripts/collect_ebpf_baseline.py`. v2 experiment streams composed: `exp_7d_brute.db` (26k events), `exp_30d_heavy.db` (510k), `exp01_90d.db` (475k), `exp_365d_realistic.db` (1.64M).
 - **Known Data Quality**: campaigns.db has 87 temporal order violations (multi-server import boundary) and 6 mixed-label sessions (labeler edge cases). campaigns_v2.db has 20 temporal order violations and 3 mixed-label sessions. Composed experiment streams are clean — StreamComposer sorts by timestamp. benign.db shares the temporal order issue. Check 2 (raw line spot-checks) fails on eBPF events because the spot-checker can't pattern-match kernel event lines (file opens, accepts, exits) — these are correctly labeled by time+IP window matching.
-- **CI**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main
+- **CI/CD**: GitHub Actions — test, lint (ruff), security (pip-audit + bandit) jobs on push/PR to main; publish workflow (OIDC trusted publishing: build → TestPyPI → PyPI) triggered on `v*` tags or manual dispatch
+- **PyPI**: Published as `security-gym` on PyPI (v0.3.1). OIDC trusted publishing via GitHub environments (`testpypi`, `pypi`). PEP 561 `py.typed` marker included.
 
 ## Commands
 
