@@ -1,5 +1,7 @@
 """Tests for EventStore read/write operations."""
 
+import json
+
 from security_gym.data.event_store import EventStore
 from tests.conftest import SAMPLE_EVENTS
 
@@ -71,6 +73,35 @@ class TestEventStore:
         campaigns = store.get_campaigns()
         assert len(campaigns) == 1
         assert campaigns[0]["name"] == "SSH Brute Force"
+        store.close()
+
+    def test_event_type_in_parsed_json(self, tmp_db):
+        """Verify event_type survives serialization in the parsed JSON column."""
+        store = EventStore(tmp_db, mode="r")
+        events = store.get_events(limit=1)
+        parsed = json.loads(events[0]["parsed"])
+        assert "event_type" in parsed
+        assert parsed["event_type"] == "auth_success"
+        store.close()
+
+    def test_event_type_injected_when_missing(self, tmp_path):
+        """EventStore injects event_type into parsed JSON if parser omitted it."""
+        from datetime import datetime, timezone
+        from security_gym.parsers.base import ParsedEvent
+
+        db_path = tmp_path / "inject.db"
+        store = EventStore(db_path, mode="w")
+        event = ParsedEvent(
+            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            source="auth_log",
+            raw_line="test line",
+            event_type="auth_failure",
+            fields={"pattern": "auth_failed_password"},  # no event_type key
+        )
+        store.insert_event(event)
+        rows = store.get_events(limit=1)
+        parsed = json.loads(rows[0]["parsed"])
+        assert parsed["event_type"] == "auth_failure"
         store.close()
 
     def test_context_manager(self, tmp_path):

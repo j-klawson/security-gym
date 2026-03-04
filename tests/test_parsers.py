@@ -83,6 +83,36 @@ class TestAuthLogParser:
         assert event is not None
         assert event.event_type == "connection"
 
+    def test_event_type_in_fields(self):
+        line = "Feb 17 10:15:30 myhost sshd[1234]: Failed password for admin from 192.168.1.100 port 22345 ssh2"
+        event = self.parser.parse_line(line)
+        assert event.fields["event_type"] == "auth_failure"
+
+    def test_session_open_enriched_from_pid_cache(self):
+        """Session open inherits src_ip and session_id from auth event on same PID."""
+        auth_line = "Feb 17 10:16:00 myhost sshd[1235]: Accepted password for admin from 10.0.0.5 port 54321 ssh2"
+        session_line = "Feb 17 10:16:01 myhost sshd[1235]: pam_unix(sshd:session): session opened for user admin by (uid=0)"
+        self.parser.parse_line(auth_line)
+        event = self.parser.parse_line(session_line)
+        assert event.src_ip == "10.0.0.5"
+        assert event.session_id == "10.0.0.5:54321"
+
+    def test_session_close_enriched_from_pid_cache(self):
+        """Session close inherits src_ip and session_id from auth event on same PID."""
+        auth_line = "Feb 17 10:16:00 myhost sshd[1235]: Accepted password for admin from 10.0.0.5 port 54321 ssh2"
+        close_line = "Feb 17 10:20:00 myhost sshd[1235]: pam_unix(sshd:session): session closed for user admin"
+        self.parser.parse_line(auth_line)
+        event = self.parser.parse_line(close_line)
+        assert event.src_ip == "10.0.0.5"
+        assert event.session_id == "10.0.0.5:54321"
+
+    def test_session_without_prior_auth_stays_none(self):
+        """Session event without a cached PID keeps src_ip/session_id as None."""
+        line = "Feb 17 10:16:01 myhost sshd[9999]: pam_unix(sshd:session): session opened for user admin by (uid=0)"
+        event = self.parser.parse_line(line)
+        assert event.src_ip is None
+        assert event.session_id is None
+
     def test_non_sshd_returns_none(self):
         line = "Feb 17 10:15:00 myhost cron[5678]: (root) CMD (/usr/bin/something)"
         event = self.parser.parse_line(line)

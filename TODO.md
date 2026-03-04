@@ -89,6 +89,14 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] Publish v0.3.1 to PyPI — https://pypi.org/project/security-gym/
 - [x] Add PyPI badge to README
 
+## Bugs Fixed (2026-03-04)
+
+- [x] Fix event_type lost during EventStore serialization — auth_log parser now stores `event_type` in `fields` dict (was the only parser missing it)
+- [x] EventStore safety net — `insert_event()` and `bulk_insert()` inject `event_type` into parsed JSON if parser omitted it
+- [x] Enrich PAM session open/close events — auth_log parser now caches PID→(src_ip, session_id) from auth events to fill in missing IP/session_id on session events (185 events in exp_365d_realistic.db affected)
+- [ ] Re-compose experiment streams to pick up event_type and session enrichment fixes (existing v2 DBs retain old parsed JSON)
+- [ ] Re-run campaigns to regenerate campaigns_v2.db with enriched session events (optional — only needed if downstream consumers read from campaigns_v2.db directly)
+
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios

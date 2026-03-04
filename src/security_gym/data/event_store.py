@@ -78,7 +78,10 @@ class EventStore:
     ) -> int:
         """Insert a single parsed event. Returns the new row id."""
         gt = ground_truth or {}
-        parsed_json = json.dumps(event.fields) if event.fields else None
+        fields = dict(event.fields) if event.fields else {}
+        if event.event_type and "event_type" not in fields:
+            fields["event_type"] = event.event_type
+        parsed_json = json.dumps(fields) if fields else None
         cursor = self.conn.execute(
             """INSERT INTO events
                (timestamp, source, raw_line, parsed,
@@ -130,7 +133,10 @@ class EventStore:
         gts = ground_truths or [{}] * len(events)
         rows = []
         for event, gt in zip(events, gts):
-            parsed_json = json.dumps(event.fields) if event.fields else None
+            fields = dict(event.fields) if event.fields else {}
+            if event.event_type and "event_type" not in fields:
+                fields["event_type"] = event.event_type
+            parsed_json = json.dumps(fields) if fields else None
             rows.append((
                 event.timestamp.isoformat(),
                 event.source,

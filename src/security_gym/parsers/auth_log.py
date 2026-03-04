@@ -76,6 +76,8 @@ class AuthLogParser(Parser):
 
     def __init__(self, year: int | None = None):
         self.year = year or datetime.now(timezone.utc).year
+        # PID → (src_ip, session_id) cache for enriching PAM session events
+        self._pid_cache: dict[int, tuple[str, str]] = {}
 
     def parse_line(self, line: str) -> ParsedEvent | None:
         header = parse_syslog_header(line, self.year)
@@ -96,7 +98,11 @@ class AuthLogParser(Parser):
                 port = int(port_str) if port_str else None
                 session_id = f"{ip}:{port}" if ip and port else None
 
-                fields: dict[str, Any] = {"message": header.message, "pattern": pattern_name}
+                fields: dict[str, Any] = {
+                    "event_type": _EVENT_TYPE_MAP[pattern_name],
+                    "message": header.message,
+                    "pattern": pattern_name,
+                }
                 if "publickey" in pattern_name:
                     fields["auth_method"] = "publickey"
                 elif "password" in pattern_name:
@@ -107,6 +113,14 @@ class AuthLogParser(Parser):
                     fields["max_attempts_exceeded"] = True
                 if pattern_name == "connection_closed_preauth":
                     fields["preauth"] = True
+
+                # Cache PID → (ip, session_id) from auth events
+                if ip and session_id and header.pid is not None:
+                    self._pid_cache[header.pid] = (ip, session_id)
+
+                # Enrich PAM session events from PID cache
+                if not ip and header.pid is not None and header.pid in self._pid_cache:
+                    ip, session_id = self._pid_cache[header.pid]
 
                 return ParsedEvent(
                     timestamp=header.timestamp,

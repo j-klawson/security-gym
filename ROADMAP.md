@@ -39,6 +39,10 @@ Generate labeled attack datasets by running campaigns against the Isildur VM.
 - Dataset published to GitHub Releases and Zenodo (DOI: 10.5281/zenodo.18810299)
 - `security-gym` CLI for dataset download (`security-gym download`, `security-gym list`)
 
+## Bugfix — event_type serialization & session enrichment (2026-03-04)
+
+Fixed `event_type` being lost during EventStore serialization — the auth_log parser was the only parser that didn't store `event_type` in `fields["event_type"]`. Also added a safety net in EventStore to inject `event_type` into the parsed JSON if any parser omits it. Additionally, the auth_log parser now enriches PAM session open/close events with `src_ip` and `session_id` by caching PID→(ip, session_id) from preceding auth events. This unblocks rlsecd's `GymEventStoreSource` which needs `event_type` to distinguish auth_success from auth_failure without pattern-matching workarounds.
+
 ## Phase 6 — Experiments (Future)
 
 Connect security-gym to alberta-framework and run continual learning experiments.
