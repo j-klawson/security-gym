@@ -20,7 +20,7 @@ stream:
   seed: 2026
 
   benign:
-    db: ../data/benign_v2.db
+    db: ../data/benign_v3.db
 
   attacks:
     db: ../data/campaigns_v2.db

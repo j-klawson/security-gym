@@ -12,7 +12,7 @@ stream:
   seed: 42
 
   benign:
-    db: ../data/benign_v2.db         # Hopper server logs + eBPF baseline — cycled to fill duration
+    db: ../data/benign_v3.db         # Personal server logs + eBPF baseline — cycled to fill duration
 
   attacks:
     db: ../data/campaigns_v2.db      # Attack event templates from Isildur campaigns (with eBPF)

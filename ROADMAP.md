@@ -146,7 +146,24 @@ Publish `security-gym` to PyPI as a `0.x` alpha package (API may change). Packag
 - [x] Publish to TestPyPI (v0.3.0 test, v0.3.1 full pipeline)
 - [x] Publish to PyPI — v0.3.1 live at https://pypi.org/project/security-gym/
 
-## Phase 10 — Analysis & Publication (Future)
+## Phase 10 — Benign Data Rebuild (v3)
+
+Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC staff names, phone numbers, org names in URL query parameters) that survived the original hostname scrub. The prior Zenodo record was deleted.
+
+- [x] Create `scripts/build_benign_v3.py` — generic, reproducible build tool accepting any server log tarballs via `--source NAME:PATH`
+- [x] 8-stage pipeline: Prep → Extract → Parse → Filter → Scrub → Insert → eBPF carryover → Verify → Report
+- [x] Malicious traffic filtering: web attacks (path traversal, SQLi, XSS, JNDI, scanner UAs, exploit paths, suspicious methods) + auth attacks (failed password, invalid user, preauth close, max auth attempts)
+- [x] PII scrubbing via external JSON config (`--scrub-config`) or `--no-scrub` for logs without PII; uses RFC 5737 TEST-NET-2 IPs and RFC 2606 example.com domains
+- [x] Hostname regex support for common-word hostnames that need contextual syslog-header-only replacement
+- [x] Update all 4 composition configs (`benign_v2.db` → `benign_v3.db`)
+- [x] Automated verification: PII absence, attack content absence, source distribution, temporal order, all-benign check
+- [x] Build report JSON (`data/build_benign_report.json`) with full audit trail for methodology reproducibility
+- [ ] Run build and validate output
+- [ ] Re-compose experiment streams with `--compose` flag
+- [ ] Publish v3 dataset to Zenodo (new DOI)
+- [ ] Update README / CITATION.cff with new DOI
+
+## Phase 11 — Analysis & Publication (Future)
 
 Results analysis, dataset release, and dissertation integration.
 

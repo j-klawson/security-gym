@@ -97,6 +97,17 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [ ] Re-compose experiment streams to pick up event_type and session enrichment fixes (existing v2 DBs retain old parsed JSON)
 - [ ] Re-run campaigns to regenerate campaigns_v2.db with enriched session events (optional — only needed if downstream consumers read from campaigns_v2.db directly)
 
+## Phase 10 — Benign Data Rebuild (v3)
+
+- [x] Create `scripts/build_benign_v3.py` — generic build tool for any server log tarballs
+- [x] Malicious traffic filtering (SSH brute force, scanner probes, SQLi/XSS/JNDI, exploit paths)
+- [x] PII scrubbing via JSON config (hostnames → generic, domains → example.com, IPs → RFC 5737 TEST-NET-2)
+- [x] Update composition configs (`benign_v2.db` → `benign_v3.db`)
+- [ ] Run build: `python scripts/build_benign_v3.py --source name:/path/to/logs.tar --output data/benign_v3.db`
+- [ ] Re-compose experiment streams with `--compose` flag
+- [ ] Publish v3 dataset to Zenodo (new DOI)
+- [ ] Update README / CITATION.cff with new DOI
+
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios
