@@ -151,14 +151,15 @@ Publish `security-gym` to PyPI as a `0.x` alpha package (API may change). Packag
 Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC staff names, phone numbers, org names in URL query parameters) that survived the original hostname scrub. The prior Zenodo record was deleted.
 
 - [x] Create `scripts/build_benign_v3.py` — generic, reproducible build tool accepting any server log tarballs via `--source NAME:PATH`
-- [x] 8-stage pipeline: Prep → Extract → Parse → Filter → Scrub → Insert → eBPF carryover → Verify → Report
-- [x] Malicious traffic filtering: web attacks (path traversal, SQLi, XSS, JNDI, scanner UAs, exploit paths, suspicious methods) + auth attacks (failed password, invalid user, preauth close, max auth attempts)
-- [x] PII scrubbing via external JSON config (`--scrub-config`) or `--no-scrub` for logs without PII; uses RFC 5737 TEST-NET-2 IPs and RFC 2606 example.com domains
-- [x] Hostname regex support for common-word hostnames that need contextual syslog-header-only replacement
+- [x] 9-stage pipeline: Prep → Extract → Parse → Filter → Scrub → Insert → eBPF carryover → Sort → Verify → Report
+- [x] Malicious traffic filtering: web attacks (path traversal, SQLi, XSS, JNDI, RFI, scanner UAs, exploit paths, suspicious methods) + auth attacks (failed password, invalid user, preauth close, max auth attempts)
+- [x] PII scrubbing via external JSON config (`--scrub-config`) or `--no-scrub` for logs without PII; case-insensitive replacements; default config maps all sources to campaign target (`isildur` / `192.168.2.201`) with `.internal` TLD domains
+- [x] Hostname regex support for common-word hostnames that need contextual syslog-header-only replacement (can, dallas)
 - [x] Update all 4 composition configs (`benign_v2.db` → `benign_v3.db`)
 - [x] Automated verification: PII absence, attack content absence, source distribution, temporal order, all-benign check
 - [x] Build report JSON (`data/build_benign_report.json`) with full audit trail for methodology reproducibility
-- [ ] Run build and validate output
+- [x] Temporal sort stage — re-orders all events by timestamp after multi-server merge, rebuilds sequential IDs
+- [x] Build complete: 4 servers (can, dallas, isildur, sak) → 7,915,858 events (4.96 GB), all 5 checks PASS
 - [ ] Re-compose experiment streams with `--compose` flag
 - [ ] Publish v3 dataset to Zenodo (new DOI)
 - [ ] Update README / CITATION.cff with new DOI

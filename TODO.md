@@ -101,9 +101,11 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 
 - [x] Create `scripts/build_benign_v3.py` — generic build tool for any server log tarballs
 - [x] Malicious traffic filtering (SSH brute force, scanner probes, SQLi/XSS/JNDI, exploit paths)
-- [x] PII scrubbing via JSON config (hostnames → generic, domains → example.com, IPs → RFC 5737 TEST-NET-2)
+- [x] PII scrubbing — case-insensitive replacements, all sources mapped to campaign target (`isildur` / `192.168.2.201`), domains → `.internal` TLD
 - [x] Update composition configs (`benign_v2.db` → `benign_v3.db`)
-- [ ] Run build: `python scripts/build_benign_v3.py --source name:/path/to/logs.tar --output data/benign_v3.db`
+- [x] RFI attack filter (`auto_prepend_file`, `auto_append_file`, `allow_url_include`)
+- [x] Temporal sort stage — re-orders events by timestamp after multi-server merge (eliminates temporal order violations)
+- [x] Run build from 4 servers (can, dallas, isildur, sak): 7,915,858 events (4.96 GB), all checks PASS
 - [ ] Re-compose experiment streams with `--compose` flag
 - [ ] Publish v3 dataset to Zenodo (new DOI)
 - [ ] Update README / CITATION.cff with new DOI
