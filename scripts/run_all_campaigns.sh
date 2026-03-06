@@ -26,8 +26,10 @@ CAMPAIGNS=(
     campaigns/log4shell_only.yaml
     campaigns/credential_stuffing_only.yaml
     campaigns/post_auth_only.yaml
+    campaigns/redis_exploit_only.yaml
     campaigns/recon_ssh_log4shell.yaml
     campaigns/full_killchain.yaml
+    campaigns/redis_killchain.yaml
 )
 
 TOTAL=${#CAMPAIGNS[@]}

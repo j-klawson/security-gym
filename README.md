@@ -17,7 +17,7 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 - **Asymmetric rewards** — blocking an attacker earns +1.0, blocking a legitimate user costs -1.0. Ongoing consequence feedback from blocked/throttled events accumulates between steps.
 - **Continuous stream** — `terminated` is always `False`; the log stream never ends (just like a real server)
 - **eBPF kernel events** — process execution, network connections, and file access captured via BPF tracepoints. Mirrors how modern EDR agents work.
-- **Attack framework** — YAML-driven campaign orchestrator with 5 modules: SSH brute force, credential stuffing, Log4Shell, port scan, post-auth execution
+- **Attack framework** — YAML-driven campaign orchestrator with 6 modules: SSH brute force, credential stuffing, Log4Shell, Redis Lua sandbox escape (CVE-2022-0543), port scan, post-auth execution
 - **Stream composition** — offline mixing of benign + attack data with Poisson-scheduled campaigns and MITRE ATT&CK-weighted type distributions
 
 ## Observation Space
@@ -85,12 +85,23 @@ Three components combined:
 | `brute_force` | `ssh_brute_force` | [T1110.001](https://attack.mitre.org/techniques/T1110/001/) — Password Guessing | TA0006 — Credential Access | SSH password brute force via paramiko with IP aliasing |
 | `web_exploit` | `log4shell` | [T1190](https://attack.mitre.org/techniques/T1190/) — Exploit Public-Facing Application | TA0001 — Initial Access | Log4Shell (CVE-2021-44228) JNDI injection via HTTP |
 | `credential_stuffing` | `credential_stuffing` | [T1110.004](https://attack.mitre.org/techniques/T1110/004/) — Credential Stuffing | TA0006 — Credential Access | Breach dump credentials, each tried once via SSH |
+| `web_exploit` | `redis_lua_escape` | [T1190](https://attack.mitre.org/techniques/T1190/) — Exploit Public-Facing Application | TA0001 — Initial Access | Redis Lua sandbox escape ([CVE-2022-0543](https://nvd.nist.gov/vuln/detail/CVE-2022-0543), CVSS 10.0) — 3-stage: enum → Lua sandbox escape via `package.loadlib()` → post-exploit RCE |
 | `execution` | `ssh_post_auth` | [T1059.004](https://attack.mitre.org/techniques/T1059/004/) — Unix Shell | TA0002 — Execution | Post-auth command execution + optional payload download |
 | `persistence` | — | — | TA0003 — Persistence | Planned |
 | `privilege_escalation` | — | — | TA0004 — Privilege Escalation | Planned |
 | `exfiltration` | — | — | TA0010 — Exfiltration | Planned |
 
-The first five attacks have implemented modules and campaign configs (including a full kill chain campaign: recon -> credential stuffing -> post-auth execution).
+The first six attacks have implemented modules, campaign configs, and validated datasets. Two kill chain campaigns combine multiple phases: recon -> credential stuffing -> post-auth execution, and recon -> Redis exploit -> SSH pivot.
+
+### Redis Lua Sandbox Escape (CVE-2022-0543)
+
+The `redis_lua_escape` module exploits a Debian-specific vulnerability where Redis is dynamically linked against liblua5.1, allowing `package.loadlib()` to escape the Lua sandbox for unauthenticated RCE. The attack runs in three stages:
+
+1. **Enumeration** — fingerprint Redis via `INFO`, `CONFIG GET *`, `DBSIZE`, `CLIENT LIST`
+2. **Exploitation** — Lua sandbox escape via `EVAL` + `package.loadlib("/usr/lib/x86_64-linux-gnu/liblua5.1.so.0", "luaopen_io")`
+3. **Post-exploitation** — system commands via repeated `EVAL` calls (`id`, `whoami`, then configurable command profiles)
+
+**Key eBPF detection signal:** `execve` events where `parent_comm=redis-server` — Redis spawning shell commands (`sh`, `bash`, `id`, `cat`) is highly anomalous. The eBPF collector captures `ppid` + `parent_comm` on every process event, so this parent-child relationship appears directly in the `process_events` text channel.
 
 ## Install
 
@@ -362,7 +373,7 @@ security-gym/
 │   ├── parsers/               # auth_log, syslog, web_access, web_error, journal, ebpf
 │   └── targets/               # Deprecated (v0 multi-head target builder)
 ├── attacks/                   # Attack framework (NOT pip-installed)
-│   ├── modules/               # recon, ssh_brute_force, credential_stuffing, ssh_post_auth, log4shell
+│   ├── modules/               # recon, ssh_brute_force, credential_stuffing, ssh_post_auth, log4shell, redis_lua_escape
 │   ├── collection/            # SSH/SFTP log collector, benign log importer, eBPF orchestrator
 │   ├── labeling/              # Time+IP campaign labeler
 │   └── tests/                 # Attack framework tests

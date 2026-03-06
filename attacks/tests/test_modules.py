@@ -11,6 +11,11 @@ import pytest
 from attacks.config import IPSourceConfig, PhaseConfig, TimingConfig, load_campaign
 from attacks.modules.base import AttackModuleRegistry
 from attacks.modules.credential_stuffing import CredentialStuffingModule
+from attacks.modules.redis_lua_escape import (
+    COMMAND_PROFILES as REDIS_COMMAND_PROFILES,
+    RedisLuaEscapeModule,
+    _resp_encode,
+)
 from attacks.modules.ssh_post_auth import COMMAND_PROFILES, SSHPostAuthModule
 
 CAMPAIGNS_DIR = Path(__file__).parent.parent.parent / "campaigns"
@@ -20,14 +25,15 @@ CAMPAIGNS_DIR = Path(__file__).parent.parent.parent / "campaigns"
 
 
 class TestModuleRegistration:
-    def test_all_five_modules_registered(self):
+    def test_all_six_modules_registered(self):
         available = AttackModuleRegistry.available()
         assert "recon" in available
         assert "ssh_brute_force" in available
         assert "log4shell" in available
         assert "ssh_post_auth" in available
         assert "credential_stuffing" in available
-        assert len(available) == 5
+        assert "redis_lua_escape" in available
+        assert len(available) == 6
 
     def test_get_ssh_post_auth(self):
         module = AttackModuleRegistry.get("ssh_post_auth")
@@ -38,6 +44,11 @@ class TestModuleRegistration:
         module = AttackModuleRegistry.get("credential_stuffing")
         assert isinstance(module, CredentialStuffingModule)
         assert module.name == "credential_stuffing"
+
+    def test_get_redis_lua_escape(self):
+        module = AttackModuleRegistry.get("redis_lua_escape")
+        assert isinstance(module, RedisLuaEscapeModule)
+        assert module.name == "redis_lua_escape"
 
 
 # ── Command Profiles ──────────────────────────────────────────────────
@@ -72,16 +83,27 @@ def _make_phase(module: str, **param_overrides) -> PhaseConfig:
         params = {"username": "test", "password": "test", "command_profile": "system_profiler"}
     elif module == "credential_stuffing":
         params = {"credentials": [["user1", "pass1"], ["user2", "pass2"]]}
+    elif module == "redis_lua_escape":
+        params = {"command_profile": "system_info", "inter_command_delay_ms": [0, 0]}
     params.update(param_overrides)
+
+    # Module-specific MITRE mappings
+    mitre_map = {
+        "ssh_post_auth": ("T1059.004", "TA0002", "execution", "execution", 3),
+        "redis_lua_escape": ("T1190", "TA0001", "web_exploit", "initial_access", 3),
+    }
+    tech, tactic, atype, astage, sev = mitre_map.get(
+        module, ("T1110.004", "TA0006", "credential_stuffing", "initial_access", 2)
+    )
 
     return PhaseConfig(
         name="Test Phase",
         module=module,
-        mitre_technique="T1059.004" if module == "ssh_post_auth" else "T1110.004",
-        mitre_tactic="TA0002" if module == "ssh_post_auth" else "TA0006",
-        attack_type="execution" if module == "ssh_post_auth" else "credential_stuffing",
-        attack_stage="execution" if module == "ssh_post_auth" else "initial_access",
-        severity=3 if module == "ssh_post_auth" else 2,
+        mitre_technique=tech,
+        mitre_tactic=tactic,
+        attack_type=atype,
+        attack_stage=astage,
+        severity=sev,
         params=params,
         ip_source=IPSourceConfig("aliased", 3, "192.168.2.0/24", start_offset=120),
         timing=TimingConfig(duration_seconds=60),
@@ -268,3 +290,167 @@ class TestCampaignYAMLLoading:
         assert config.phases[0].attack_stage == "recon"
         assert config.phases[1].attack_stage == "initial_access"
         assert config.phases[2].attack_stage == "execution"
+
+    def test_load_redis_exploit_only(self):
+        config = load_campaign(CAMPAIGNS_DIR / "redis_exploit_only.yaml")
+        assert len(config.phases) == 1
+        assert config.phases[0].module == "redis_lua_escape"
+        assert config.phases[0].attack_type == "web_exploit"
+        assert config.phases[0].attack_stage == "initial_access"
+        assert config.phases[0].severity == 3
+
+    def test_load_redis_killchain(self):
+        config = load_campaign(CAMPAIGNS_DIR / "redis_killchain.yaml")
+        assert len(config.phases) == 3
+        assert config.phases[0].module == "recon"
+        assert config.phases[1].module == "redis_lua_escape"
+        assert config.phases[2].module == "ssh_post_auth"
+        # Verify kill chain progression
+        assert config.phases[0].attack_stage == "recon"
+        assert config.phases[1].attack_stage == "initial_access"
+        assert config.phases[2].attack_stage == "execution"
+
+
+# ── Redis RESP Encoding ──────────────────────────────────────────────
+
+
+class TestRESPEncoding:
+    def test_simple_command(self):
+        """RESP encode a simple PING command."""
+        encoded = _resp_encode("PING")
+        assert encoded == b"*1\r\n$4\r\nPING\r\n"
+
+    def test_multi_arg_command(self):
+        """RESP encode a multi-argument command."""
+        encoded = _resp_encode("SET", "key", "value")
+        assert encoded == b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"
+
+    def test_eval_command(self):
+        """RESP encode an EVAL command with Lua script."""
+        encoded = _resp_encode("EVAL", "return 1", "0")
+        assert encoded == b"*3\r\n$4\r\nEVAL\r\n$8\r\nreturn 1\r\n$1\r\n0\r\n"
+
+    def test_info_command(self):
+        """RESP encode INFO command."""
+        encoded = _resp_encode("INFO")
+        assert encoded == b"*1\r\n$4\r\nINFO\r\n"
+
+
+# ── Redis Command Profiles ───────────────────────────────────────────
+
+
+class TestRedisCommandProfiles:
+    def test_all_profiles_exist(self):
+        expected = {"system_info", "user_enum", "network_enum", "redis_enum", "persistence", "full_recon"}
+        assert expected == set(REDIS_COMMAND_PROFILES.keys())
+
+    def test_profiles_are_non_empty(self):
+        for name, cmds in REDIS_COMMAND_PROFILES.items():
+            assert len(cmds) > 0, f"Redis profile {name!r} is empty"
+
+    def test_full_recon_contains_all_others(self):
+        full = set(REDIS_COMMAND_PROFILES["full_recon"])
+        for name, cmds in REDIS_COMMAND_PROFILES.items():
+            if name != "full_recon":
+                for cmd in cmds:
+                    assert cmd in full, f"{cmd!r} from {name} not in full_recon"
+
+
+# ── Redis Dry Run ────────────────────────────────────────────────────
+
+
+class TestRedisLuaEscapeDryRun:
+    def test_dry_run(self):
+        module = AttackModuleRegistry.get("redis_lua_escape")
+        phase = _make_phase("redis_lua_escape")
+        ips = ["192.168.2.170", "192.168.2.171"]
+        result = module.dry_run(phase, ips)
+        assert result["module"] == "redis_lua_escape"
+        assert result["ip_count"] == 2
+        assert result["params"]["command_profile"] == "system_info"
+
+
+# ── Redis Mocked Execute ─────────────────────────────────────────────
+
+
+class TestRedisLuaEscapeExecute:
+    @patch("attacks.modules.redis_lua_escape.socket.socket")
+    def test_execute_three_stages(self, mock_socket_cls):
+        """Redis module connects, enumerates, exploits, and runs post-exploit commands."""
+        mock_sock = MagicMock()
+        mock_socket_cls.return_value = mock_sock
+
+        # Build a response sequence:
+        # 4 enum commands → INFO, CONFIG GET *, DBSIZE, CLIENT LIST
+        # 1 exploit (id) → must contain "uid="
+        # N post-exploit commands → generic responses
+        responses = []
+        # Enum responses (4)
+        responses.append(b"+redis_version:6.0.16\r\n")
+        responses.append(b"+dir /var/lib/redis\r\n")
+        responses.append(b":42\r\n")
+        responses.append(b"+id=1 addr=192.168.2.170\r\n")
+        # Exploit response (id via EVAL)
+        responses.append(b"$28\r\nuid=110(redis) gid=117(redis)\r\n")
+        # Post-exploit responses (whoami + system_info profile commands)
+        # whoami, uname -a, cat /proc/cpuinfo, cat /proc/meminfo, df -h
+        for _ in range(5):
+            responses.append(b"$5\r\nredis\r\n")
+
+        mock_sock.recv = MagicMock(side_effect=responses)
+
+        module = AttackModuleRegistry.get("redis_lua_escape")
+        phase = _make_phase("redis_lua_escape", inter_command_delay_ms=[0, 0])
+        phase.timing = TimingConfig(duration_seconds=300)
+        ips = ["192.168.2.170"]
+
+        import random
+        rng = random.Random(42)
+        logger = logging.getLogger("test")
+
+        result = module.execute("192.168.2.201", phase, ips, rng, logger)
+
+        assert result.module_name == "redis_lua_escape"
+        assert result.attempts == 1
+        assert result.successes == 1
+        assert "enumeration" in result.metadata["stages_completed"]
+        assert "exploitation" in result.metadata["stages_completed"]
+        assert "post_exploitation" in result.metadata["stages_completed"]
+        # id + whoami + 4 system_info commands = 6 (id counted once from exploit stage)
+        assert len(result.metadata["commands_executed"]) >= 5
+
+    @patch("attacks.modules.redis_lua_escape.socket.socket")
+    def test_execute_connection_failure(self, mock_socket_cls):
+        """Connection failure returns zero successes."""
+        mock_sock = MagicMock()
+        mock_socket_cls.return_value = mock_sock
+        mock_sock.connect.side_effect = ConnectionRefusedError("refused")
+
+        module = AttackModuleRegistry.get("redis_lua_escape")
+        phase = _make_phase("redis_lua_escape")
+        phase.timing = TimingConfig(duration_seconds=300)
+        ips = ["192.168.2.170"]
+
+        import random
+        rng = random.Random(42)
+        logger = logging.getLogger("test")
+
+        result = module.execute("192.168.2.201", phase, ips, rng, logger)
+
+        assert result.attempts == 1
+        assert result.successes == 0
+        assert len(result.errors) == 1
+
+    def test_invalid_profile_raises(self):
+        """Unknown command_profile raises ValueError."""
+        module = AttackModuleRegistry.get("redis_lua_escape")
+        phase = _make_phase("redis_lua_escape", command_profile="nonexistent")
+        phase.timing = TimingConfig(duration_seconds=60)
+        ips = ["192.168.2.170"]
+
+        import random
+        rng = random.Random(42)
+        logger = logging.getLogger("test")
+
+        with pytest.raises(ValueError, match="Unknown command_profile"):
+            module.execute("192.168.2.201", phase, ips, rng, logger)

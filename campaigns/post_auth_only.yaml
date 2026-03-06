@@ -33,7 +33,7 @@ campaign:
         count: 3
         subnet: "192.168.2.0/24"
         start_offset: 120
-        interface: en0
+        interface: enp3s0
       timing:
         duration_seconds: 180
         profile: constant

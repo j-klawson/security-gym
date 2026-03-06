@@ -110,6 +110,23 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [ ] Publish v3 dataset to Zenodo (new DOI)
 - [ ] Update README / CITATION.cff with new DOI
 
+## Phase 9b — Redis CVE-2022-0543
+
+- [x] Create `redis_lua_escape` attack module (3-stage: enum, exploit, post-exploit)
+- [x] Implement RESP protocol helpers (raw TCP, no new deps)
+- [x] Add 6 command profiles (system_info, user_enum, network_enum, redis_enum, persistence, full_recon)
+- [x] Create `campaigns/redis_exploit_only.yaml` (standalone campaign)
+- [x] Create `campaigns/redis_killchain.yaml` (recon → Redis → SSH pivot)
+- [x] Add tests (registration, RESP encoding, profiles, dry-run, mocked execute, YAML loading)
+- [x] Update `scripts/run_all_campaigns.sh` (7 → 9 campaigns)
+- [x] Document Redis setup in `server/BUILD.md`
+- [x] Install Redis on Isildur (apt install, bind 0.0.0.0, protected-mode no)
+- [x] Create ISILDUR_READY_V3 snapshot on Frodo
+- [x] Run `redis_exploit_only` and `redis_killchain` campaigns — campaigns_v2.db now 60,468 events (30,436 malicious)
+- [x] Labels validated: 5 PASS, 1 SKIP, 3 FAIL (all pre-existing/expected)
+- [x] Update campaign YAML interfaces from `en0` (macOS) to `enp3s0` (Hopper/Linux)
+- [ ] Re-compose experiment streams with Redis attack data
+
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios

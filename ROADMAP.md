@@ -16,7 +16,7 @@ syslog, web_access, web_error, journal parsers; SessionFeatureExtractor (20-dim)
 
 ## Phase 4 — Attack Scripts ✅
 
-YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell/credential_stuffing/ssh_post_auth), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`). 5 attack modules covering 6 MITRE ATT&CK tactics (Reconnaissance, Credential Access, Initial Access, Execution, Discovery, Command and Control) with full kill chain campaign support.
+YAML-driven campaign framework, MITRE ATT&CK-aligned phases, AttackModuleRegistry (recon/ssh_brute_force/log4shell/credential_stuffing/ssh_post_auth/redis_lua_escape), non-stationary timing profiles, IPManager (spoofed + aliased), LogCollector (SSH/SFTP), CampaignLabeler (time+IP matching), auditd parser, CampaignOrchestrator, CLI (`python -m attacks`). 6 attack modules covering 6 MITRE ATT&CK tactics (Reconnaissance, Credential Access, Initial Access, Execution, Discovery, Command and Control) with kill chain campaign support.
 
 ## Phase 5 — Data Collection ✅
 
@@ -145,6 +145,23 @@ Publish `security-gym` to PyPI as a `0.x` alpha package (API may change). Packag
 - [x] Configure `testpypi` and `pypi` environments in GitHub repo settings (trusted publisher)
 - [x] Publish to TestPyPI (v0.3.0 test, v0.3.1 full pipeline)
 - [x] Publish to PyPI — v0.3.1 live at https://pypi.org/project/security-gym/
+
+## Phase 9b — Redis CVE-2022-0543 Attack Module
+
+Added `redis_lua_escape` attack module — exploits the Debian-specific Lua sandbox escape in Redis (CVSS 10.0) for unauthenticated RCE. Three-stage attack: Redis enumeration (INFO, CONFIG, DBSIZE, CLIENT LIST), Lua sandbox escape via `EVAL` + `package.loadlib()`, and post-exploitation system commands. Raw TCP/RESP protocol (no new dependencies). Six command profiles (system_info, user_enum, network_enum, redis_enum, persistence, full_recon).
+
+- [x] `redis_lua_escape` attack module (`attacks/modules/redis_lua_escape.py`)
+- [x] RESP protocol helpers (encode, read, command) — inline, ~80 lines
+- [x] Campaign configs: `redis_exploit_only.yaml` (standalone), `redis_killchain.yaml` (recon → Redis → SSH pivot)
+- [x] Tests: registration, RESP encoding, command profiles, dry-run, mocked execute, campaign YAML loading (30 total, all pass)
+- [x] `server/BUILD.md` updated with Redis setup and CVE-2022-0543 documentation
+- [x] Install Redis on Isildur (`apt install redis-server`, bind 0.0.0.0, protected-mode no)
+- [x] Create ISILDUR_READY_V3 snapshot on Frodo
+- [x] Run `redis_exploit_only` and `redis_killchain` campaigns against Isildur
+- [x] campaigns_v2.db now 60,468 events (30,436 malicious, 30,032 benign) — +~12K from Redis campaigns
+- [x] Labels validated: 5 PASS, 1 SKIP, 3 FAIL (all pre-existing/expected: eBPF spot-check, temporal order, session coherence)
+- [x] Campaign YAMLs updated from `en0` (macOS) to `enp3s0` (Hopper/Linux) for all 8 aliased-strategy configs
+- [ ] Re-compose experiment streams with Redis attack data
 
 ## Phase 10 — Benign Data Rebuild (v3)
 
