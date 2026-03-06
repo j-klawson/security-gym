@@ -160,7 +160,12 @@ Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC sta
 - [x] Build report JSON (`data/build_benign_report.json`) with full audit trail for methodology reproducibility
 - [x] Temporal sort stage — re-orders all events by timestamp after multi-server merge, rebuilds sequential IDs
 - [x] Build complete: 4 servers (can, dallas, isildur, sak) → 7,915,858 events (4.96 GB), all 5 checks PASS
-- [ ] Re-compose experiment streams with `--compose` flag
+- [x] Re-compose experiment streams from benign_v3.db + campaigns_v2.db (sequentially to avoid OOM on 24GB system)
+  - exp_7d_brute.db: 140K events (114K benign, 26K attack), 6 campaigns, 101MB
+  - exp_30d_heavy.db: 1.0M events (494K benign, 509K attack), 284 campaigns, 643MB
+  - exp01_90d.db: 1.9M events (1.4M benign, 475K attack), 277 campaigns, 1.3GB
+  - exp_365d_realistic.db: 9.4M events (7.8M benign, 1.6M attack), 897 campaigns, 6.5GB
+  - All 4 streams validated: temporal order PASS, label consistency PASS, session coherence PASS
 - [ ] Publish v3 dataset to Zenodo (new DOI)
 - [ ] Update README / CITATION.cff with new DOI
 

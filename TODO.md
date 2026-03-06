@@ -94,7 +94,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] Fix event_type lost during EventStore serialization — auth_log parser now stores `event_type` in `fields` dict (was the only parser missing it)
 - [x] EventStore safety net — `insert_event()` and `bulk_insert()` inject `event_type` into parsed JSON if parser omitted it
 - [x] Enrich PAM session open/close events — auth_log parser now caches PID→(src_ip, session_id) from auth events to fill in missing IP/session_id on session events (185 events in exp_365d_realistic.db affected)
-- [ ] Re-compose experiment streams to pick up event_type and session enrichment fixes (existing v2 DBs retain old parsed JSON)
+- [x] Re-compose experiment streams to pick up event_type and session enrichment fixes (existing v2 DBs retain old parsed JSON)
 - [ ] Re-run campaigns to regenerate campaigns_v2.db with enriched session events (optional — only needed if downstream consumers read from campaigns_v2.db directly)
 
 ## Phase 10 — Benign Data Rebuild (v3)
@@ -106,7 +106,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] RFI attack filter (`auto_prepend_file`, `auto_append_file`, `allow_url_include`)
 - [x] Temporal sort stage — re-orders events by timestamp after multi-server merge (eliminates temporal order violations)
 - [x] Run build from 4 servers (can, dallas, isildur, sak): 7,915,858 events (4.96 GB), all checks PASS
-- [ ] Re-compose experiment streams with `--compose` flag
+- [x] Re-compose experiment streams from benign_v3.db + campaigns_v2.db (4 streams, all validated PASS)
 - [ ] Publish v3 dataset to Zenodo (new DOI)
 - [ ] Update README / CITATION.cff with new DOI
 
