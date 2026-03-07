@@ -12,7 +12,7 @@ Current action items for security-gym development.
 - [x] Label collected logs with CampaignLabeler (time+IP matching)
 - [ ] Validate labeled data in EventStore — spot-check label accuracy
 - [ ] Verify auditd ground truth matches campaign execution windows (auditd currently timing out via paramiko)
-- [x] Publish dataset to GitHub Releases and Zenodo (DOI: 10.5281/zenodo.18810299)
+- [x] Publish dataset to GitHub Releases and Zenodo (software DOI: 10.5281/zenodo.18810298, dataset DOI: 10.5281/zenodo.18901542)
 
 ## Bugs Fixed (2026-02-27)
 
@@ -107,8 +107,8 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] Temporal sort stage — re-orders events by timestamp after multi-server merge (eliminates temporal order violations)
 - [x] Run build from 4 servers (can, dallas, isildur, sak): 7,915,858 events (4.96 GB), all checks PASS
 - [x] Re-compose experiment streams from benign_v3.db + campaigns_v2.db (4 streams, all validated PASS)
-- [ ] Publish v3 dataset to Zenodo (new DOI)
-- [ ] Update README / CITATION.cff with new DOI
+- [x] Publish v3 dataset to Zenodo (DOI: 10.5281/zenodo.18901542)
+- [x] Update README / CITATION.cff with new DOI
 
 ## Phase 9b — Redis CVE-2022-0543
 

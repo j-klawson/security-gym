@@ -9,8 +9,8 @@ repository-code: "https://github.com/j-klawson/security-gym"
 url: "https://github.com/j-klawson/security-gym"
 license: Apache-2.0
 version: "0.3.3"
-date-released: "2026-03-06"
-doi: "10.5281/zenodo.18810299"
+date-released: "2026-03-07"
+doi: "10.5281/zenodo.18810298"
 keywords:
   - gymnasium
   - cybersecurity

@@ -36,7 +36,7 @@ Generate labeled attack datasets by running campaigns against the Isildur VM.
 - Benign DB imported from 3 servers (1.45M events), scrubbed of identifying hostnames/domains/emails
 - v1 experiment streams composed: 7d brute-only, 30d heavy, 90d mixed, 365d realistic (136k events, 897 campaigns)
 - v2 experiment streams re-composed with eBPF: 7d (26k events, 6 campaigns), 30d (510k, 284), 90d (475k, 277), 365d (1.64M, 897)
-- Dataset published to GitHub Releases and Zenodo (DOI: 10.5281/zenodo.18810299)
+- Dataset published to GitHub Releases and Zenodo (software DOI: 10.5281/zenodo.18810298, dataset DOI: 10.5281/zenodo.18901542)
 - `security-gym` CLI for dataset download (`security-gym download`, `security-gym list`)
 
 ## Bugfix — event_type serialization & session enrichment (2026-03-04)
@@ -183,8 +183,21 @@ Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC sta
   - exp01_90d.db: 1.9M events (1.4M benign, 475K attack), 277 campaigns, 1.3GB
   - exp_365d_realistic.db: 9.4M events (7.8M benign, 1.6M attack), 897 campaigns, 6.5GB
   - All 4 streams validated: temporal order PASS, label consistency PASS, session coherence PASS
-- [ ] Publish v3 dataset to Zenodo (new DOI)
-- [ ] Update README / CITATION.cff with new DOI
+- [x] Publish v3 dataset to Zenodo (DOI: 10.5281/zenodo.18901542)
+- [x] Update README / CITATION.cff with new DOI
+
+## v0.3.3 Release (2026-03-07)
+
+GitHub release and Zenodo archival of software and datasets.
+
+- [x] Pre-release PII audit of all datasets (campaigns_v2.db, experiment streams, benign_v3.db)
+- [x] Scrub SSH key fingerprint from campaigns_v2.db (replaced with synthetic)
+- [x] Recompress campaigns_v2.db.zst and benign_v3.db.zst for release
+- [x] Create DATASET_README.md with schema docs, quick start, and citation
+- [x] GitHub release v0.3.3 — triggers Zenodo software archive (DOI: 10.5281/zenodo.18810298)
+- [x] Separate Zenodo dataset deposit (DOI: 10.5281/zenodo.18901542) — 6 .zst files (502MB total)
+- [x] Update CITATION.cff, README.md, .zenodo.json, ROADMAP.md, TODO.md with new DOIs
+- [x] Tests: 233 passed, lint clean, no dependency vulnerabilities
 
 ## Phase 11 — Analysis & Publication (Future)
 

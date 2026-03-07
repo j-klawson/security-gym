@@ -26,9 +26,9 @@
       "scheme": "url"
     },
     {
-      "identifier": "https://arxiv.org/abs/2208.11173",
-      "relation": "references",
-      "scheme": "url"
+      "identifier": "https://doi.org/10.5281/zenodo.18810298",
+      "relation": "isNewVersionOf",
+      "scheme": "doi"
     }
   ]
 }
