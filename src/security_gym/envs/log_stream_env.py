@@ -114,6 +114,10 @@ class SecurityLogStreamEnv(gymnasium.Env):
 
         # Optional reward weight overrides
         self._reward_config = reward_config or {}
+        self._include_risk_reward: bool = self._reward_config.get("include_risk_reward", True)
+        self._risk_weight: float = float(self._reward_config.get("risk_weight", 0.1))
+        self._benign_drop_penalty: float = float(self._reward_config.get("benign_drop_penalty", 0.5))
+        self._malicious_drop_reward: float = float(self._reward_config.get("malicious_drop_reward", 0.1))
 
         # ── Observation space ────────────────────────────────────────
         # Use printable ASCII charset (log lines contain spaces, punctuation, etc.)
@@ -234,9 +238,9 @@ class SecurityLogStreamEnv(gymnasium.Env):
         """Accumulate ongoing reward/penalty for dropped events."""
         is_mal = row.get("is_malicious")
         if is_mal == 1:
-            self._ongoing_reward += 0.05  # confirmed mitigation
+            self._ongoing_reward += self._malicious_drop_reward
         elif is_mal == 0:
-            self._ongoing_reward -= 0.1  # service impact — legit user denied
+            self._ongoing_reward -= self._benign_drop_penalty
 
     def _route_event(self, source: str) -> str:
         """Map event source to observation channel name."""
@@ -294,13 +298,16 @@ class SecurityLogStreamEnv(gymnasium.Env):
         # 1. Action reward (asymmetric)
         is_mal = ground_truth["is_malicious"]
         if is_mal:
-            action_reward = _ATTACK_REWARDS.get(action, 0.0)
+            action_reward: float = _ATTACK_REWARDS.get(action, 0.0)
         else:
             action_reward = _BENIGN_REWARDS.get(action, 0.0)
 
         # 2. Risk score reward (negative MSE)
         true_risk = float(ground_truth["true_risk"])
-        risk_reward = -0.1 * (risk_pred - true_risk) ** 2
+        if self._include_risk_reward:
+            risk_reward = -self._risk_weight * (risk_pred - true_risk) ** 2
+        else:
+            risk_reward = 0.0
 
         # 3. Ongoing consequence reward (from dropped events since last step)
         consequence_reward = self._ongoing_reward

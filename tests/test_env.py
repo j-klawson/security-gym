@@ -345,6 +345,82 @@ class TestGymnasiumRegistration:
         env.close()
 
 
+class TestRewardConfig:
+    def test_risk_reward_disabled(self, tmp_db):
+        """include_risk_reward=False → risk prediction error has no effect."""
+        env = SecurityLogStreamEnv(
+            db_path=tmp_db,
+            reward_config={"include_risk_reward": False},
+        )
+        env.reset()
+        # Pass on benign with wildly wrong risk_score=10.0
+        _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 10.0))
+        if not info["ground_truth"]["is_malicious"]:
+            # action_reward=0.0, risk_reward=0.0 (disabled), consequence=0.0
+            assert reward == pytest.approx(0.0, abs=0.01)
+        env.close()
+
+    def test_risk_reward_enabled_default(self, tmp_db):
+        """Default include_risk_reward=True preserves MSE penalty."""
+        env = SecurityLogStreamEnv(db_path=tmp_db)
+        env.reset()
+        _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 10.0))
+        if not info["ground_truth"]["is_malicious"]:
+            # action_reward=0.0, risk_reward=-0.1*(10-0)^2=-10.0
+            assert reward < -5.0
+        env.close()
+
+    def test_custom_risk_weight(self, tmp_db):
+        """Custom risk_weight scales the MSE penalty."""
+        env = SecurityLogStreamEnv(
+            db_path=tmp_db,
+            reward_config={"risk_weight": 1.0},
+        )
+        env.reset()
+        _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 10.0))
+        if not info["ground_truth"]["is_malicious"]:
+            # action_reward=0.0, risk_reward=-1.0*(10-0)^2=-100.0
+            assert reward == pytest.approx(-100.0, abs=0.1)
+        env.close()
+
+    def test_consequence_benign_drop_penalty(self, tmp_db):
+        """Blocking benign IP → consequence uses benign_drop_penalty."""
+        env = SecurityLogStreamEnv(db_path=tmp_db)
+        env.reset()
+        # Block the benign IP (10.0.0.1) on first event
+        env.step(_make_action(ACTION_BLOCK_SOURCE, 0.0))
+        # Next step skips blocked benign events, accumulating consequence
+        _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 0.0))
+        # With default benign_drop_penalty=0.5, each dropped benign event
+        # contributes -0.5. Reward should be negative from consequences.
+        if info["events_dropped"] > 0:
+            assert reward < 0.0
+        env.close()
+
+    def test_consequence_custom_penalties(self, tmp_db):
+        """Custom benign_drop_penalty and malicious_drop_reward are respected."""
+        # Use two envs with different penalty values, same actions
+        cfg_high = {"include_risk_reward": False, "benign_drop_penalty": 10.0}
+        cfg_low = {"include_risk_reward": False, "benign_drop_penalty": 0.01}
+        env_high = SecurityLogStreamEnv(db_path=tmp_db, reward_config=cfg_high)
+        env_low = SecurityLogStreamEnv(db_path=tmp_db, reward_config=cfg_low)
+        env_high.reset(seed=42)
+        env_low.reset(seed=42)
+        # Block benign IP (10.0.0.1) — advance() skips remaining benign
+        # events from that IP, accumulating consequence in this step's reward
+        _, reward_high, _, _, info_h = env_high.step(
+            _make_action(ACTION_BLOCK_SOURCE, 0.0)
+        )
+        _, reward_low, _, _, info_l = env_low.step(
+            _make_action(ACTION_BLOCK_SOURCE, 0.0)
+        )
+        # Both should have dropped events; higher penalty → lower reward
+        assert info_h["events_dropped"] > 0
+        assert reward_high < reward_low
+        env_high.close()
+        env_low.close()
+
+
 class TestRiskScoreGroundTruth:
     def test_benign_risk_zero(self, tmp_db):
         """Benign events should have true_risk=0.0."""

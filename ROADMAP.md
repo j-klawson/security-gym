@@ -199,7 +199,39 @@ GitHub release and Zenodo archival of software and datasets.
 - [x] Update CITATION.cff, README.md, .zenodo.json, ROADMAP.md, TODO.md with new DOIs
 - [x] Tests: 233 passed, lint clean, no dependency vulnerabilities
 
-## Phase 11 — Analysis & Publication (Future)
+## Phase 11 — Report Action / SOC Escalation (Future)
+
+Add a `report` action (ACTION_REPORT = 6, expanding Discrete(6) → Discrete(7)) that simulates the agent escalating an event to a SOC analyst. Unlike `block`/`isolate` which are immediate and autonomous, `report` models the real-world path of filing an incident report and waiting for a human analyst to investigate and remediate.
+
+**Mechanics:**
+- Agent takes `report` action on a suspicious event → starts a "resolution timer" (configurable delay in events or wall-clock seconds, simulating SOC response time)
+- During the delay, the attack continues — the agent still observes events and can take other actions
+- After the delay, if the reported IP was truly malicious, the SOC "resolves" the incident: the attacker's IP is blocked and any persistence is cleaned up (events from that campaign cease)
+- If the reported IP was benign, the SOC dismisses the report (no effect, mild penalty for false report)
+- Resolution removes the attacker's source IP from the stream entirely (simulating the SOC stopping the attack at the network/host level)
+
+**Reward design:**
+- Correct report on malicious: large delayed positive reward when SOC resolves (higher than autonomous block, since SOC resolution is more thorough — cleans up persistence, not just blocks IP)
+- False report on benign: negative penalty (wasted SOC time), but less than blocking benign traffic (no service disruption)
+- Report cost: small immediate negative reward (SOC analyst time is a finite resource — prevents spamming reports)
+- Key tradeoff: report is the *best* response to a real attack (thorough resolution) but has high latency — the agent must decide whether to block immediately (fast but incomplete) or report and wait (slow but complete)
+
+**Why this matters:**
+- Models the real-world SOC workflow — most security agents don't act alone, they escalate
+- Creates a meaningful temporal credit assignment problem — the reward is delayed by the SOC response time
+- Bridges to the autoresearch oracle pipeline — the "SOC analyst" can eventually be the fine-tuned LLM oracle
+- Tests whether SARSA can learn to prefer delayed-but-larger rewards over immediate-but-smaller ones (report vs. block)
+
+**Implementation:**
+- [ ] Add ACTION_REPORT = 6, expand action space to Discrete(7)
+- [ ] Report queue: track reported IPs with timestamps, configurable resolution delay
+- [ ] SOC resolution logic: remove attacker from stream after delay (filter by campaign_id to catch session pivots)
+- [ ] Reward table entries for report on malicious/benign
+- [ ] `reward_config` keys: `report_cost`, `report_resolve_reward`, `false_report_penalty`, `soc_response_delay`
+- [ ] Tests for report timing, resolution, false reports, multiple concurrent reports
+- [ ] Update rlsecd action mapping for report action
+
+## Phase 12 — Analysis & Publication (Future)
 
 Results analysis, dataset release, and dissertation integration.
 
