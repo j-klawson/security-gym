@@ -13,7 +13,8 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 
 ## Features
 
-- **Raw text observations** — 6 text channels (auth\_log, syslog, web\_log, process\_events, network\_events, file\_events) + numeric system stats. The agent learns its own representations.
+- **Raw text observations (v1)** — 6 text channels (auth\_log, syslog, web\_log, process\_events, network\_events, file\_events) + numeric system stats. The agent learns its own representations.
+- **Hybrid text + structured observations (v2)** — 3 text channels for logs + 3 fixed-width float32 arrays for eBPF kernel events. Matches how real SOC tooling consumes data: text for human-readable logs, structured arrays for kernel telemetry.
 - **Defensive action space** — 6 actions (pass / alert / throttle / block\_source / unblock / isolate) + continuous risk score. Actions causally affect future observations.
 - **Asymmetric rewards** — blocking an attacker earns +1.0, blocking a legitimate user costs -1.0. Ongoing consequence feedback from blocked/throttled events accumulates between steps.
 - **Continuous stream** — `terminated` is always `False`; the log stream never ends (just like a real server)
@@ -22,6 +23,8 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 - **Stream composition** — offline mixing of benign + attack data with Poisson-scheduled campaigns and MITRE ATT&CK-weighted type distributions
 
 ## Observation Space
+
+### V1 — All Text (`SecurityLogStream-v1`)
 
 The agent sees the same data a security analyst would — raw log files and kernel event streams:
 
@@ -38,6 +41,31 @@ Dict({
 ```
 
 Each text channel is a ring buffer of recent lines (configurable `tail_lines` and `max_chars`), updated on every step.
+
+### V2 — Hybrid Text + Structured (`SecurityLogStream-v2`)
+
+Log channels remain as text; eBPF kernel events become fixed-width float32 arrays:
+
+```
+Dict({
+    "auth_log":         Text              # Unchanged — raw log text
+    "syslog":           Text              # Unchanged
+    "web_log":          Text              # Unchanged
+    "process_events":   Box(50, 8)        # [log_dt, pid, ppid, uid, syscall, comm_hash, parent_hash, tree_depth]
+    "network_events":   Box(50, 7)        # [log_dt, pid, uid, syscall, dst_ip_hash, dst_port, comm_hash]
+    "file_events":      Box(50, 6)        # [log_dt, pid, uid, syscall, flags, path_hash]
+    "system_stats":     Box(3)            # Unchanged
+})
+```
+
+Each structured channel is a ring buffer of `tail_events` rows (default 50). String fields (comm, IP, path) are hashed via mmh3 with per-field seeds. Timestamp deltas are log-scaled (`log(1 + dt)`) for gradient stability. Process events track tree depth from pid/ppid ancestry.
+
+```python
+env = gym.make("SecurityLogStream-v2", db_path="data/campaigns.db", tail_events=50)
+obs, info = env.reset()
+print(obs["auth_log"][:100])            # str — raw log text
+print(obs["process_events"].shape)      # (50, 8) — float32 array
+```
 
 ## Action Space
 

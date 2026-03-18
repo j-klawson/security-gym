@@ -125,7 +125,41 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] Run `redis_exploit_only` and `redis_killchain` campaigns — campaigns_v2.db now 60,468 events (30,436 malicious)
 - [x] Labels validated: 5 PASS, 1 SKIP, 3 FAIL (all pre-existing/expected)
 - [x] Update campaign YAML interfaces from `en0` (macOS) to `enp3s0` (Hopper/Linux)
-- [ ] Re-compose experiment streams with Redis attack data
+- [x] Re-compose experiment streams with Redis attack data — done in Phase 10 (Redis campaigns in campaigns_v2.db labeled as web_exploit/execution/discovery)
+
+## Phase 13a — Structured eBPF Observation Channels
+
+Convert eBPF text channels to fixed-width numeric arrays. See ROADMAP.md Phase 13 for full design.
+
+- [ ] Add xxhash to dependencies (`pyproject.toml` core deps)
+- [ ] Create `src/security_gym/features/hashing.py` — `hash_comm()`, `hash_path()` using xxhash64 truncated to uint32
+- [ ] Create `src/security_gym/envs/structured_buffer.py` — `StructuredRingBuffer` class: `np.ndarray(shape=(capacity, width))` with circular write index, `snapshot() -> np.ndarray` method
+- [ ] Add `fields_json` column to EventStore schema v3 (optional, nullable) for pre-parsed structured fields
+- [ ] eBPF raw_line re-parser: `parse_ebpf_line(raw: str) -> dict[str, int|float]` to extract typed fields from existing text format (bridge until EventStore stores structured fields natively)
+- [ ] Update `log_stream_env.py`: structured ring buffers for eBPF channels, text deques for log channels
+- [ ] Update `scan_stream.py` (SecurityGymStream adapter): matching structured buffers
+- [ ] Register `SecurityLogStream-v2` with hybrid observation space
+- [ ] Tests: hash determinism, ring buffer wraparound + snapshot, observation space shape, mixed text+structured obs
+- [ ] Benchmark: v1 (text) vs v2 (hybrid) on exp_7d_brute.db with rlsecd
+
+## Phase 13b — eBPF LSM Hooks
+
+Add BPF LSM security decision signals. Requires kernel config on Isildur.
+
+- [ ] SSH to Isildur: `cat /boot/config-$(uname -r) | grep BPF_LSM` — check if BPF LSM is compiled in
+- [ ] If disabled: add `lsm=lockdown,yama,bpf` to GRUB cmdline, reboot, verify with `cat /sys/kernel/security/lsm`
+- [ ] Create ISILDUR_READY_V4 snapshot on Frodo
+- [ ] Add P0 LSM hooks to `server/ebpf_collector.py`: `bprm_check_security`, `file_open`, `socket_connect`
+- [ ] Add `lsm_event_t` C struct and `BPF_LSM` program string
+- [ ] Add `_on_lsm` callback and LSM event formatter (structured output, not text)
+- [ ] Create `src/security_gym/parsers/ebpf_lsm.py` parser
+- [ ] Add `ebpf_lsm` source type to EventStore
+- [ ] Add `lsm_events` structured channel to v2 env
+- [ ] Re-run campaigns with LSM collection → campaigns_v3.db
+- [ ] Collect 24h benign LSM baseline
+- [ ] Add P1 hooks: `ptrace_access_check`, `capable`
+- [ ] Enforcement map prototype: `BPF_HASH(blocked_pids)` readable by LSM hooks, writable from userspace
+- [ ] Tests: LSM obs space, hook enum, enforcement map
 
 ## Housekeeping
 

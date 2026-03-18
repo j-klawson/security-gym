@@ -116,12 +116,12 @@ Hook the RL agent directly into the Linux kernel for real-time observation of sy
 - [ ] Create ISILDUR_READY_V2 snapshot on Frodo
 - [x] Re-compose experiment streams from v2 databases — 4 streams with eBPF kernel events
 - [x] Enrich eBPF event lines: PPID + parent_comm on process events, UID on network events
-- Extended 24-hour benign eBPF baseline from Isildur (capture cron jobs, log rotation, Docker health checks, diurnal patterns) with synthetic benign traffic (legitimate SSH sessions, web browsing through nginx)
-- Periodic kernel state summary as text (active PIDs, open sockets, privileged process count, new procs/conns per window) — injected into the event stream as a text line, not structured numerics, so the agent learns its own encoding. Revisit after Phase 6 baselines show whether the agent struggles with event-rate signals in raw text.
+- **Extended benign eBPF baseline** — 24+ hour collection from Isildur covering cron jobs, log rotation, Docker health checks, diurnal patterns, with synthetic benign traffic (legitimate SSH sessions, web browsing through nginx). **Critical for Phase 13a v2 env:** current benign eBPF is only 997 events from 1-hour manual collection; structured channels will be sparse during benign periods without this, biasing the agent to associate eBPF activity with attacks. Re-compose experiment streams after collection to populate benign_v3.db with eBPF events.
 - Attack campaigns that generate kernel-level telemetry (privilege escalation, rootkits, fileless malware)
-- Real-time streaming from kernel to agent (low-latency path, not log-based)
-- Integration with existing log + NetFlow streams for multi-modal observation
-- Evaluate agent performance on kernel events vs. log-only vs. combined
+- ~~Periodic kernel state summary as text~~ → superseded by Phase 13a structured eBPF channels (timestamp_delta encodes event rate natively)
+- ~~Real-time streaming from kernel to agent (low-latency path, not log-based)~~ → addressed by Phase 13b LSM enforcement path
+- ~~Integration with existing log + NetFlow streams for multi-modal observation~~ → addressed by Phase 13a hybrid observation space
+- ~~Evaluate agent performance on kernel events vs. log-only vs. combined~~ → Phase 13a benchmark: v1 (text) vs v2 (hybrid)
 
 ## PyPI Publication
 
@@ -161,7 +161,7 @@ Added `redis_lua_escape` attack module — exploits the Debian-specific Lua sand
 - [x] campaigns_v2.db now 60,468 events (30,436 malicious, 30,032 benign) — +~12K from Redis campaigns
 - [x] Labels validated: 5 PASS, 1 SKIP, 3 FAIL (all pre-existing/expected: eBPF spot-check, temporal order, session coherence)
 - [x] Campaign YAMLs updated from `en0` (macOS) to `enp3s0` (Hopper/Linux) for all 8 aliased-strategy configs
-- [ ] Re-compose experiment streams with Redis attack data
+- [x] Re-compose experiment streams with Redis attack data — completed as part of Phase 10 recompose (campaigns_v2.db already included Redis campaigns, labeled as web_exploit/execution/discovery by MITRE stage)
 
 ## Phase 10 — Benign Data Rebuild (v3)
 
@@ -230,6 +230,117 @@ Add a `report` action (ACTION_REPORT = 6, expanding Discrete(6) → Discrete(7))
 - [ ] `reward_config` keys: `report_cost`, `report_resolve_reward`, `false_report_penalty`, `soc_response_delay`
 - [ ] Tests for report timing, resolution, false reports, multiple concurrent reports
 - [ ] Update rlsecd action mapping for report action
+
+## Phase 13 — Hybrid Observation Space & eBPF LSM (Future)
+
+Restructure the observation space to reflect how security signals are actually consumed in production SOC tooling. Log channels (auth_log, syslog, web_log) stay as raw text — that's what analysts read in Splunk/Elastic. eBPF kernel channels switch from text to structured numeric arrays — mirroring Tetragon/Tracee/Falco JSON output that SOC platforms consume programmatically. New eBPF LSM hooks add security-decision-point signals that tracepoints can't provide, and create a path to kernel-level enforcement for Step 4a SARSA control.
+
+**Motivation:** The current eBPF text format (`"2026-03-18T12:00:00Z execve pid=1234 ppid=1200 uid=0 comm=bash"`) is an artificial lossy step. These events are born as typed C structs in kernel space — the collector already has `event.pid`, `event.ppid`, `event.uid` as integers before flattening to text. No human reads eBPF events as raw text; SOC analysts consume them through structured dashboards. The agent wastes representational capacity learning to parse text that was never text to begin with.
+
+### Phase 13a — Structured eBPF Observation Channels ✅
+
+Convert the three eBPF text channels to fixed-width numeric arrays. No new kernel work required — restructures data that's already collected.
+
+**Observation space change:**
+```python
+# Text channels (unchanged) — human-readable logs
+"auth_log":         Text(max_length=max_chars)
+"syslog":           Text(max_length=max_chars)
+"web_log":          Text(max_length=max_chars)
+
+# Structured eBPF channels — sliding window of N events × M fields
+"process_events":   Box(shape=(tail_events, 8))
+    # [log_delta, pid, ppid, uid, syscall_type, comm_hash, parent_comm_hash, tree_depth]
+"network_events":   Box(shape=(tail_events, 7))
+    # [log_delta, pid, uid, syscall_type, dst_ip_hash, dst_port, comm_hash]
+"file_events":      Box(shape=(tail_events, 6))
+    # [log_delta, pid, uid, syscall_type, flags_int, path_hash]
+
+# System stats (unchanged)
+"system_stats":     Box(shape=(3,))
+```
+
+`log_delta` = `log(1 + dt_seconds)` since previous event in that channel (log-scaled for gradient stability). String fields hashed via mmh3 with per-field seeds (SEED_COMM=0, SEED_IP=1, SEED_PATH=2) to prevent cross-channel aliasing. Process events include `tree_depth` derived from pid/ppid ancestry.
+
+**Implementation:**
+
+- [x] `StructuredRingBuffer` — circular numpy buffer with O(1) append and chronological snapshot (`envs/structured_buffer.py`)
+- [x] `ebpf_encoding.py` — mmh3 hashing with per-field seeds, syscall enum, flag bitmask, log-scaled deltas, per-channel row extraction
+- [x] `SecurityLogStreamEnvV2` — subclass with hybrid text + structured observation space, process tree depth tracking, per-channel timestamp deltas (`envs/log_stream_env_v2.py`)
+- [x] `SecurityLogStream-v2` registered alongside v1 (backwards compatible)
+- [x] `SecurityGymStream` `structured=True` mode — same hybrid observation in batch/streaming adapter
+- [x] Tests: 288 passing (47 new: ring buffer, encoding, v2 env integration, adapter structured mode)
+- [x] Read structured fields from existing `parsed` JSON column in EventStore — no schema changes needed
+- [ ] Benchmark: compare agent training on v1 (all text) vs v2 (hybrid) on same experiment stream
+
+**Data prerequisite:** Current experiment streams have very few benign eBPF events (only 997 from a 1-hour manual collection). The v2 structured channels will be sparse during benign periods, which could bias the agent to associate "eBPF activity = attack". Need extended benign eBPF collection before meaningful v1 vs v2 benchmarks — see Phase 9 backlog item.
+
+### Phase 13b — eBPF LSM Hooks
+
+Add BPF LSM programs to the collector to capture security decision events at the kernel enforcement layer. LSM hooks fire at the point where the kernel decides whether to allow or deny an operation — after path resolution, permission checks, and credential evaluation. This is strictly more informative than tracepoints, which only see syscall arguments before the kernel acts.
+
+**Kernel prerequisite:** Isildur (Debian 11, kernel 5.10) supports BPF LSM but likely needs `CONFIG_BPF_LSM=y` and `lsm=...,bpf` boot parameter. Requires kernel reconfig or boot param change → new ISILDUR_READY_V4 snapshot.
+
+**New LSM hooks (prioritized by security-gym value):**
+
+| Priority | Hook | Signal | Attack Detection Value |
+|----------|------|--------|----------------------|
+| P0 | `bprm_check_security` | Binary execution with resolved path + creds | Payload execution, shell spawns, LOLBins |
+| P0 | `file_open` | File access with resolved inode + mode + creds | Shadow file reads, config tampering, log deletion |
+| P0 | `socket_connect` | Outbound connection with resolved socket + creds | Reverse shells, C2 callbacks, exfiltration |
+| P1 | `ptrace_access_check` | Process debugging/injection attempts | Code injection, debugger attachment (common post-exploit) |
+| P1 | `capable` | Capability checks (CAP_NET_RAW, CAP_SYS_ADMIN, etc.) | Privilege escalation attempts |
+| P2 | `task_fix_setuid` | setuid/setgid transitions | SUID binary exploitation |
+| P2 | `sb_mount` | Mount operations | Container escape, filesystem manipulation |
+| P2 | `inode_link` / `inode_rename` | Hardlink creation, file renaming | Log tampering, binary replacement |
+
+**New observation channel:**
+```python
+"lsm_events":      Box(shape=(tail_events, 9))
+    # [timestamp_delta, hook_type, pid, ppid, uid, capability_bits,
+    #  target_inode, object_hash, decision]
+```
+
+`hook_type` enum maps LSM hook names to integers (0=bprm_check, 1=file_open, 2=socket_connect, ...). `decision` is 0=allowed in observation mode; in control mode (Step 4a), it becomes the agent's previous enforcement decision for that hook, closing the perception-action loop.
+
+**Enforcement path (bridges to rlsecd Step 4a):**
+
+BPF LSM programs can return `-EPERM` to deny operations. This creates a direct mechanism for the SARSA control demon: instead of simulating `block`/`throttle` by dropping log events, the agent's action is compiled into a BPF map that the LSM hook reads in real-time. The kernel itself enforces the agent's decisions. This is the path from `rlsecd --gym` (simulated defense) to `rlsecd --live` (kernel-enforced defense).
+
+**Implementation:**
+
+- [ ] Check `CONFIG_BPF_LSM` on Isildur: `cat /boot/config-$(uname -r) | grep BPF_LSM`
+- [ ] Enable BPF LSM if needed (boot param or kernel reconfig)
+- [ ] Create ISILDUR_READY_V4 snapshot on Frodo
+- [ ] New `BPF_LSM` C program strings in `server/ebpf_collector.py` — P0 hooks first
+- [ ] LSM event struct: `lsm_event_t` with hook_type, pid, uid, capability, inode, decision fields
+- [ ] Perf buffer + callback for LSM events (`_on_lsm`)
+- [ ] LSM event parser in `src/security_gym/parsers/`
+- [ ] `lsm_events` structured channel in env + adapter
+- [ ] EventStore source type: `ebpf_lsm`
+- [ ] Campaign labeling: LSM events labeled by same time+IP window matching as existing eBPF events
+- [ ] Re-run campaigns with LSM collection enabled (campaigns_v3.db)
+- [ ] Collect benign LSM baseline (24h) for normal capability checks, file opens, binary execution patterns
+- [ ] Tests: LSM observation space, hook type enum, enforcement map read/write
+- [ ] Enforcement map prototype: BPF hash map (`blocked_pids`, `blocked_inodes`) readable by LSM hooks, writable from userspace — proof-of-concept for Step 4a live control
+
+### Phase 13 Dependencies & Ordering
+
+- **13a is independent** — can start immediately, uses existing data, no kernel changes
+- **13b depends on kernel config** — needs Isildur access for BPF LSM verification
+- **13a should complete before Phase 6 experiments** — hybrid obs space is the representation the agent should be evaluated on
+- **13b enforcement prototype feeds into rlsecd Step 4a** — the BPF enforcement map is the mechanism SARSA uses for live control
+- **Phase 11 (Report Action) is independent** — can be developed in parallel with Phase 13
+
+### Open Design Questions
+
+1. **Hash collision strategy**: xxhash32 has ~1/4B collision rate. At the scale of Linux command names (~few thousand) and file paths (~few thousand unique during a campaign), collisions are negligible. But should we use a consistent hash→embedding lookup that the agent learns, rather than feeding raw hash values as floats?
+
+2. **tail_events default**: Text channels use `tail_lines=500`. For structured channels, each "event" is a fixed-width row, so memory is predictable. Higher values (1000–2000) give the agent more temporal context without the truncation issues of text channels. Need to benchmark memory and training speed.
+
+3. **Backward compatibility**: Register as `SecurityLogStream-v2` (hybrid obs) alongside existing `SecurityLogStream-v1` (all text). The v1→v2 migration in rlsecd needs the adapter to support both. Consider a `structured_ebpf=True` flag on the v1 env as a transitional path.
+
+4. **LSM hook granularity**: P2 hooks (mount, inode_link, inode_rename) generate high event volume on normal systems. May need filtering (e.g., only log mount operations outside known mount points, only log inode operations on sensitive paths). This filtering logic lives in the BPF C program to avoid flooding the perf buffer.
 
 ## Phase 12 — Analysis & Publication (Future)
 

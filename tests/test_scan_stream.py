@@ -278,8 +278,8 @@ class TestEbpfSources:
         """Stream with eBPF events should include kernel event channels."""
         stream = SecurityGymStream(tmp_db_with_ebpf)
         observations, ground_truths = stream.collect_numpy()
-        # 13 regular + 3 eBPF = 16 events
-        assert len(observations) == 16
+        # 13 regular + 6 eBPF = 19 events
+        assert len(observations) == 19
 
     def test_kernel_channels_populated(self, tmp_db_with_ebpf):
         """eBPF events should populate process/network/file channels."""
@@ -293,3 +293,53 @@ class TestEbpfSources:
             + last_obs["file_events"]
         )
         assert len(kernel_content) > 0
+
+
+class TestStructuredMode:
+    def test_structured_collect_numpy(self, tmp_db_with_ebpf):
+        """Structured mode returns ndarray for eBPF channels."""
+        stream = SecurityGymStream(
+            tmp_db_with_ebpf, structured=True, tail_events=10,
+        )
+        observations, ground_truths = stream.collect_numpy()
+        assert len(observations) == 19
+
+        last_obs = observations[-1]
+        # Text channels are still strings
+        assert isinstance(last_obs["auth_log"], str)
+        assert isinstance(last_obs["syslog"], str)
+        assert isinstance(last_obs["web_log"], str)
+
+        # eBPF channels are ndarrays
+        assert isinstance(last_obs["process_events"], np.ndarray)
+        assert last_obs["process_events"].shape == (10, 8)
+        assert isinstance(last_obs["network_events"], np.ndarray)
+        assert last_obs["network_events"].shape == (10, 7)
+        assert isinstance(last_obs["file_events"], np.ndarray)
+        assert last_obs["file_events"].shape == (10, 6)
+
+        # eBPF channels should have non-zero data
+        assert np.any(last_obs["process_events"] != 0)
+        assert np.any(last_obs["network_events"] != 0)
+        assert np.any(last_obs["file_events"] != 0)
+
+    def test_structured_iter_batches(self, tmp_db_with_ebpf):
+        """Structured mode works with iter_batches."""
+        stream = SecurityGymStream(
+            tmp_db_with_ebpf, structured=True, tail_events=5,
+        )
+        all_obs = []
+        for obs_batch, gt_batch in stream.iter_batches(size=10):
+            all_obs.extend(obs_batch)
+        assert len(all_obs) == 19
+        # Last observation should have structured eBPF data
+        assert isinstance(all_obs[-1]["process_events"], np.ndarray)
+
+    def test_unstructured_default(self, tmp_db_with_ebpf):
+        """Default (structured=False) still returns text for all channels."""
+        stream = SecurityGymStream(tmp_db_with_ebpf)
+        observations, _ = stream.collect_numpy()
+        last_obs = observations[-1]
+        assert isinstance(last_obs["process_events"], str)
+        assert isinstance(last_obs["network_events"], str)
+        assert isinstance(last_obs["file_events"], str)

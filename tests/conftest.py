@@ -143,31 +143,56 @@ def _make_sample_events() -> list[tuple[ParsedEvent, dict | None]]:
 
 
 def _make_ebpf_events() -> list[tuple[ParsedEvent, dict | None]]:
-    """Create eBPF kernel events for test fixtures."""
+    """Create eBPF kernel events for test fixtures.
+
+    Includes all fields needed for v2 structured encoding: ppid, parent_comm,
+    uid on network events, flags/uid on file events. Two events per channel
+    to support timestamp delta testing.
+    """
     events = []
     base = datetime(2026, 2, 17, 10, 0, 5, tzinfo=timezone.utc)
 
-    # Process events (benign)
+    # ── Process events (benign) ──────────────────────────────────────
     events.append((
         ParsedEvent(
             timestamp=base,
             source="ebpf_process",
-            raw_line="2026-02-17T10:00:05.000000Z execve pid=1234 uid=0 comm=cron args=/usr/sbin/cron",
+            raw_line="2026-02-17T10:00:05.000000Z execve pid=1234 ppid=1200 uid=0 comm=cron parent_comm=systemd args=/usr/sbin/cron",
             event_type="execve",
-            fields={"event_type": "execve", "pid": 1234, "uid": 0, "comm": "cron"},
+            fields={
+                "event_type": "execve", "pid": 1234, "ppid": 1200,
+                "uid": 0, "comm": "cron", "parent_comm": "systemd",
+            },
+            pid=1234,
+        ),
+        {"is_malicious": 0, "severity": 0},
+    ))
+    events.append((
+        ParsedEvent(
+            timestamp=base + timedelta(milliseconds=50),
+            source="ebpf_process",
+            raw_line="2026-02-17T10:00:05.050000Z exit pid=1234 ppid=1200 uid=0 comm=cron parent_comm=systemd code=0",
+            event_type="exit",
+            fields={
+                "event_type": "exit", "pid": 1234, "ppid": 1200,
+                "uid": 0, "comm": "cron", "parent_comm": "systemd",
+            },
             pid=1234,
         ),
         {"is_malicious": 0, "severity": 0},
     ))
 
-    # Network events (attack)
+    # ── Network events (attack) ──────────────────────────────────────
     events.append((
         ParsedEvent(
             timestamp=base + timedelta(milliseconds=100),
             source="ebpf_network",
-            raw_line="2026-02-17T10:00:05.100000Z connect pid=5678 comm=wget dst=93.184.216.34:80",
+            raw_line="2026-02-17T10:00:05.100000Z connect pid=5678 uid=1000 comm=wget dst=93.184.216.34:80",
             event_type="connect",
-            fields={"event_type": "connect", "pid": 5678, "comm": "wget", "dst": "93.184.216.34:80"},
+            fields={
+                "event_type": "connect", "pid": 5678, "uid": 1000,
+                "comm": "wget", "dst": "93.184.216.34:80",
+            },
             src_ip="93.184.216.34",
             pid=5678,
         ),
@@ -178,15 +203,51 @@ def _make_ebpf_events() -> list[tuple[ParsedEvent, dict | None]]:
             "severity": 3,
         },
     ))
+    events.append((
+        ParsedEvent(
+            timestamp=base + timedelta(milliseconds=150),
+            source="ebpf_network",
+            raw_line="2026-02-17T10:00:05.150000Z accept pid=22 uid=0 comm=sshd",
+            event_type="accept",
+            fields={
+                "event_type": "accept", "pid": 22, "uid": 0, "comm": "sshd",
+            },
+            pid=22,
+        ),
+        {"is_malicious": 0, "severity": 0},
+    ))
 
-    # File events (attack)
+    # ── File events (attack) ─────────────────────────────────────────
     events.append((
         ParsedEvent(
             timestamp=base + timedelta(milliseconds=200),
             source="ebpf_file",
-            raw_line="2026-02-17T10:00:05.200000Z open pid=5678 comm=wget path=/tmp/payload.sh flags=O_WRONLY|O_CREAT",
+            raw_line="2026-02-17T10:00:05.200000Z open pid=5678 uid=1000 comm=wget path=/tmp/payload.sh flags=O_WRONLY|O_CREAT",
             event_type="open",
-            fields={"event_type": "open", "pid": 5678, "comm": "wget", "path": "/tmp/payload.sh"},
+            fields={
+                "event_type": "open", "pid": 5678, "uid": 1000,
+                "comm": "wget", "path": "/tmp/payload.sh",
+                "flags": "O_WRONLY|O_CREAT",
+            },
+            pid=5678,
+        ),
+        {
+            "is_malicious": 1,
+            "attack_type": "execution",
+            "attack_stage": "execution",
+            "severity": 3,
+        },
+    ))
+    events.append((
+        ParsedEvent(
+            timestamp=base + timedelta(milliseconds=300),
+            source="ebpf_file",
+            raw_line="2026-02-17T10:00:05.300000Z unlink pid=5678 uid=1000 comm=rm path=/tmp/payload.sh",
+            event_type="unlink",
+            fields={
+                "event_type": "unlink", "pid": 5678, "uid": 1000,
+                "comm": "rm", "path": "/tmp/payload.sh",
+            },
             pid=5678,
         ),
         {

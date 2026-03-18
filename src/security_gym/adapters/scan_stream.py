@@ -11,6 +11,7 @@ arrays when available, and the iterator requires JAX for TimeStep.
 from __future__ import annotations
 
 import collections
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,11 @@ from typing import Any, Iterator
 import numpy as np
 
 from security_gym.data.event_store import EventStore
+from security_gym.envs.ebpf_encoding import (
+    extract_file_row,
+    extract_network_row,
+    extract_process_row,
+)
 from security_gym.envs.log_stream_env import (
     _CHANNELS,
     _RISK_MAP,
@@ -26,6 +32,13 @@ from security_gym.envs.log_stream_env import (
     DEFAULT_MAX_CHARS,
     DEFAULT_TAIL_LINES,
 )
+from security_gym.envs.log_stream_env_v2 import (
+    DEFAULT_TAIL_EVENTS,
+    _EBPF_SOURCE_MAP,
+    _STRUCTURED_CHANNELS,
+    _TEXT_CHANNELS,
+)
+from security_gym.envs.structured_buffer import StructuredRingBuffer
 
 try:
     import importlib.util
@@ -67,6 +80,8 @@ class SecurityGymStream:
         batch_size: int = 5000,
         speed: float = 0,
         loop: bool = False,
+        structured: bool = False,
+        tail_events: int = DEFAULT_TAIL_EVENTS,
     ):
         self.db_path = Path(db_path)
         self.tail_lines = tail_lines
@@ -75,6 +90,8 @@ class SecurityGymStream:
         self.batch_size = batch_size
         self.speed = speed
         self.loop = loop
+        self.structured = structured
+        self.tail_events = tail_events
 
     @property
     def channels(self) -> list[str]:
@@ -101,17 +118,103 @@ class SecurityGymStream:
         """Map event source to observation channel."""
         return _SOURCE_TO_CHANNEL.get(source, "syslog")
 
+    def _make_buffers(
+        self,
+    ) -> tuple[
+        dict[str, collections.deque[str]],
+        dict[str, StructuredRingBuffer] | None,
+    ]:
+        """Create buffer dicts based on structured mode."""
+        if self.structured:
+            text_bufs: dict[str, collections.deque[str]] = {
+                ch: collections.deque(maxlen=self.tail_lines)
+                for ch in _TEXT_CHANNELS
+            }
+            struct_bufs = {
+                ch: StructuredRingBuffer(self.tail_events, n_cols)
+                for ch, n_cols in _STRUCTURED_CHANNELS.items()
+            }
+            return text_bufs, struct_bufs
+        else:
+            all_bufs: dict[str, collections.deque[str]] = {
+                ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+            }
+            return all_bufs, None
+
+    def _buffer_event(
+        self,
+        row: dict[str, Any],
+        text_buffers: dict[str, collections.deque[str]],
+        struct_buffers: dict[str, StructuredRingBuffer] | None,
+        pid_depth: dict[int, int],
+        ebpf_last_ts: dict[str, float | None],
+    ) -> None:
+        """Route event to text or structured buffer."""
+        source = row.get("source", "")
+
+        if self.structured and source in _EBPF_SOURCE_MAP:
+            struct_channel = _EBPF_SOURCE_MAP[source]
+            assert struct_buffers is not None
+
+            parsed_str = row.get("parsed")
+            if parsed_str:
+                try:
+                    parsed = json.loads(parsed_str)
+                except (json.JSONDecodeError, TypeError):
+                    parsed = {}
+            else:
+                parsed = {}
+
+            # Timestamp delta
+            ts = self._parse_row_timestamp(row)
+            ts_epoch = ts.timestamp() if ts else None
+            last = ebpf_last_ts.get(struct_channel)
+            dt = (ts_epoch - last) if (last is not None and ts_epoch is not None) else 0.0
+            if ts_epoch is not None:
+                ebpf_last_ts[struct_channel] = ts_epoch
+
+            if source == "ebpf_process":
+                pid = parsed.get("pid", 0)
+                ppid = parsed.get("ppid", 0)
+                depth = pid_depth.get(ppid, 0) + 1 if ppid else 0
+                pid_depth[pid] = depth
+                encoded = extract_process_row(parsed, dt, depth=depth)
+            elif source == "ebpf_network":
+                encoded = extract_network_row(parsed, dt)
+            else:
+                encoded = extract_file_row(parsed, dt)
+
+            struct_buffers[struct_channel].append(encoded)
+        else:
+            channel = self._route_event(source)
+            if channel in text_buffers:
+                text_buffers[channel].append(row["raw_line"])
+
     def _build_observation(
-        self, buffers: dict[str, collections.deque],
+        self,
+        buffers: dict[str, collections.deque[str]],
+        struct_buffers: dict[str, StructuredRingBuffer] | None = None,
     ) -> dict[str, Any]:
-        """Build text observation from ring buffers."""
+        """Build observation from ring buffers."""
         obs: dict[str, Any] = {}
-        for ch in _CHANNELS:
-            lines = list(buffers.get(ch, []))
-            text = "\n".join(lines)
-            if len(text) > self.max_chars:
-                text = text[-self.max_chars:]
-            obs[ch] = text
+
+        if self.structured and struct_buffers is not None:
+            for ch in _TEXT_CHANNELS:
+                lines = list(buffers.get(ch, []))
+                text = "\n".join(lines)
+                if len(text) > self.max_chars:
+                    text = text[-self.max_chars:]
+                obs[ch] = text
+            for ch in _STRUCTURED_CHANNELS:
+                obs[ch] = struct_buffers[ch].snapshot()
+        else:
+            for ch in _CHANNELS:
+                lines = list(buffers.get(ch, []))
+                text = "\n".join(lines)
+                if len(text) > self.max_chars:
+                    text = text[-self.max_chars:]
+                obs[ch] = text
+
         obs["system_stats"] = np.array([0.5, 0.3, 0.2], dtype=np.float32)
         return obs
 
@@ -202,19 +305,18 @@ class SecurityGymStream:
             of observation dicts, and ground_truths is a list of ground
             truth dicts.
         """
-        buffers: dict[str, collections.deque[str]] = {
-            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        text_bufs, struct_bufs = self._make_buffers()
+        pid_depth: dict[int, int] = {}
+        ebpf_last_ts: dict[str, float | None] = {
+            ch: None for ch in _STRUCTURED_CHANNELS
         }
         observations: list[dict[str, Any]] = []
         ground_truths: list[dict[str, Any]] = []
 
         for row in self._iter_rows(limit=limit, allow_loop=False):
-            # Add to buffer
-            channel = self._route_event(row.get("source", ""))
-            buffers[channel].append(row["raw_line"])
+            self._buffer_event(row, text_bufs, struct_bufs, pid_depth, ebpf_last_ts)
 
-            # Build observation snapshot
-            obs = self._build_observation(buffers)
+            obs = self._build_observation(text_bufs, struct_bufs)
             observations.append(obs)
             ground_truths.append(self._build_ground_truth(row))
 
@@ -235,17 +337,18 @@ class SecurityGymStream:
 
         Each batch contains lists of observation dicts and ground truth dicts.
         """
-        buffers: dict[str, collections.deque[str]] = {
-            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        text_bufs, struct_bufs = self._make_buffers()
+        pid_depth: dict[int, int] = {}
+        ebpf_last_ts: dict[str, float | None] = {
+            ch: None for ch in _STRUCTURED_CHANNELS
         }
         obs_buf: list[dict[str, Any]] = []
         gt_buf: list[dict[str, Any]] = []
 
         for row in self._iter_rows(allow_loop=False):
-            channel = self._route_event(row.get("source", ""))
-            buffers[channel].append(row["raw_line"])
+            self._buffer_event(row, text_bufs, struct_bufs, pid_depth, ebpf_last_ts)
 
-            obs_buf.append(self._build_observation(buffers))
+            obs_buf.append(self._build_observation(text_bufs, struct_bufs))
             gt_buf.append(self._build_ground_truth(row))
 
             if len(obs_buf) >= size:
@@ -263,12 +366,13 @@ class SecurityGymStream:
                 "JAX is required for the iterator interface. "
                 "Install with: pip install 'security-gym[alberta]'"
             )
-        buffers: dict[str, collections.deque[str]] = {
-            ch: collections.deque(maxlen=self.tail_lines) for ch in _CHANNELS
+        text_bufs, struct_bufs = self._make_buffers()
+        pid_depth: dict[int, int] = {}
+        ebpf_last_ts: dict[str, float | None] = {
+            ch: None for ch in _STRUCTURED_CHANNELS
         }
         for row in self._iter_rows():
-            channel = self._route_event(row.get("source", ""))
-            buffers[channel].append(row["raw_line"])
-            obs = self._build_observation(buffers)
+            self._buffer_event(row, text_bufs, struct_bufs, pid_depth, ebpf_last_ts)
+            obs = self._build_observation(text_bufs, struct_bufs)
             gt = self._build_ground_truth(row)
             yield TimeStep(observation=obs, ground_truth=gt)
