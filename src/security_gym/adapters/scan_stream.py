@@ -154,7 +154,8 @@ class SecurityGymStream:
 
         if self.structured and source in _EBPF_SOURCE_MAP:
             struct_channel = _EBPF_SOURCE_MAP[source]
-            assert struct_buffers is not None
+            if struct_buffers is None:  # pragma: no cover
+                raise RuntimeError("struct_buffers must not be None for structured eBPF routing")
 
             parsed_str = row.get("parsed")
             if parsed_str:
