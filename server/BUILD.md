@@ -106,6 +106,65 @@ After verifying eBPF collection works, create a new golden state on Frodo:
 virsh snapshot-create-as isildur --name "ISILDUR_READY_V2" --description "BCC/eBPF kernel event collection"
 ```
 
+## 5b. eBPF Collection on Debian 13 (Trixie)
+
+For multi-server benign eBPF collection (Phase 9c). Debian 13.4 ships kernel 6.x with full BPF support — simpler than the Debian 11 manual BCC install.
+
+### Installation
+
+```bash
+sudo apt install -y bpfcc-tools python3-bpfcc linux-headers-$(uname -r)
+```
+
+No manual `.deb` install needed — Debian 13 repos have current BCC packages compatible with kernel 6.x. The `bpf_probe_read_kernel` API and tracepoint ABIs used by `server/ebpf_collector.py` are stable across kernels 5.10–6.x.
+
+### Sudoers Rules
+
+Add to `/etc/sudoers.d/ebpf_collector`:
+
+```
+keith ALL=(root) NOPASSWD: /usr/bin/python3 /tmp/security_gym_ebpf_collector.py *
+keith ALL=(root) NOPASSWD: /usr/bin/pkill -f security_gym_ebpf_collector*
+```
+
+### Smoke Test
+
+```bash
+# Deploy collector
+scp server/ebpf_collector.py user@server:/tmp/security_gym_ebpf_collector.py
+
+# Test 30-second collection
+ssh user@server 'sudo python3 /tmp/security_gym_ebpf_collector.py --output /tmp/test_ebpf.log &'
+sleep 30
+ssh user@server 'sudo pkill -f security_gym_ebpf_collector; head -20 /tmp/test_ebpf.log'
+```
+
+### Differences from Isildur (Debian 11)
+
+| | Isildur (Debian 11) | Debian 13 servers |
+|---|---|---|
+| Kernel | 5.10 | 6.x |
+| BCC install | Manual `.deb` | `apt install` |
+| SSH user | `researcher` | `keith` |
+| Collector user | `researcher` (NOPASSWD) | `keith` (NOPASSWD) |
+| `bpf_probe_read_kernel` | Required explicit switch from `bpf_probe_read` | Native support |
+
+### Collection
+
+```bash
+# Standalone eBPF-only collection (no --source needed)
+python scripts/collect_ebpf_baseline.py \
+    --duration 86400 --host <server-ip> \
+    --ssh-user keith --ssh-key ~/.ssh/id_ed25519 \
+    --output data/ebpf_<server>.db
+
+# Non-standard SSH port
+python scripts/collect_ebpf_baseline.py \
+    --duration 86400 --host <server-ip> --ssh-port 2222 \
+    --ssh-user keith --ssh-key ~/.ssh/id_ed25519 \
+    --output data/ebpf_<server>.db
+```
+
 ## 6. Active Vulnerabilities
 
 **Log4Shell (CVE-2021-44228)**

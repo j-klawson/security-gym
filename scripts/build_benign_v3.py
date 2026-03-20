@@ -43,10 +43,12 @@ Usage — process your own server logs:
       --scrub-config my_scrub.json \\
       --output data/benign.db
 
-  # With eBPF carryover from a prior build
+  # With eBPF carryover from multiple servers
   python scripts/build_benign_v3.py \\
       --source web1:/path/to/web1_logs.tar \\
-      --ebpf-source data/prior_benign.db \\
+      --ebpf-source data/ebpf_server1.db \\
+      --ebpf-source data/ebpf_server2.db \\
+      --ebpf-source data/ebpf_server3.db \\
       --output data/benign.db
 
   # Build + update composition configs + re-compose experiment streams
@@ -90,6 +92,7 @@ import argparse
 import gzip
 import json
 import logging
+import os
 import re
 import sqlite3
 import subprocess
@@ -214,9 +217,14 @@ AUTH_FILTER_RULES: dict[str, list[str]] = {
 
 @dataclass
 class MaliciousFilter:
-    """Filter malicious events. Returns (keep, rule_name) per event."""
+    """Filter malicious events. Returns (keep, rule_name) per event.
+
+    Also accumulates source IPs from filtered events so that eBPF network
+    events from the same attackers can be filtered during carryover.
+    """
 
     hit_counts: dict[str, dict[str, int]] = field(default_factory=dict)
+    malicious_ips: set[str] = field(default_factory=set)
 
     def check(self, event: ParsedEvent) -> tuple[bool, str | None]:
         """Return (keep: bool, rule_name | None). False = filtered out."""
@@ -228,6 +236,7 @@ class MaliciousFilter:
                 for pat in patterns:
                     if pat.lower() in raw:
                         self._count(source, rule)
+                        self._track_ip(event)
                         return False, rule
             return True, None
 
@@ -237,6 +246,7 @@ class MaliciousFilter:
                 for pat in patterns:
                     if pat.lower() in raw:
                         self._count(source, rule)
+                        self._track_ip(event)
                         return False, rule
             return True, None
 
@@ -245,11 +255,17 @@ class MaliciousFilter:
                 for pat in patterns:
                     if pat in raw:
                         self._count(source, rule)
+                        self._track_ip(event)
                         return False, rule
             return True, None
 
         # syslog, ebpf_* — keep everything
         return True, None
+
+    def _track_ip(self, event: ParsedEvent) -> None:
+        """Record source IP from a filtered event for eBPF cross-reference."""
+        if event.src_ip:
+            self.malicious_ips.add(event.src_ip)
 
     def _count(self, source: str, rule: str) -> None:
         if source not in self.hit_counts:
@@ -492,18 +508,19 @@ class BenignV3Builder:
         sources: list[SourceConfig],
         output_path: Path,
         scrub_config: ScrubConfig,
-        ebpf_source: Path | None = None,
+        ebpf_sources: list[Path] | None = None,
     ):
         self.sources = sources
         self.output_path = output_path
         self.scrub_config = scrub_config
-        self.ebpf_source = ebpf_source
+        self.ebpf_sources = ebpf_sources or []
         self.mal_filter = MaliciousFilter()
         self.scrubber = PIIScrubber(config=scrub_config)
         self.source_stats: list[SourceStats] = []
         self.events_by_source: dict[str, int] = {}
         self.total_events = 0
         self.ebpf_events = 0
+        self.ebpf_events_filtered = 0
 
     def build(self) -> dict:
         """Run full pipeline and return build report dict."""
@@ -641,14 +658,31 @@ class BenignV3Builder:
         logger.debug("  Inserted batch of %d events (total: %d)", count, self.total_events)
 
     def _carryover_ebpf(self) -> None:
-        """Stage 6: Carry over eBPF events from a prior database if available."""
+        """Stage 6: Carry over eBPF events from prior databases if available.
+
+        Filters ebpf_network events whose src_ip matches IPs accumulated
+        from malicious log events during stages 1-5. Process and file events
+        pass through unfiltered.
+        """
         logger.info("Stage 6: eBPF carryover")
 
-        if self.ebpf_source is None:
-            logger.info("  No eBPF source specified, skipping")
+        if not self.ebpf_sources:
+            logger.info("  No eBPF sources specified, skipping")
             return
 
-        ebpf_path = self.ebpf_source
+        if self.mal_filter.malicious_ips:
+            logger.info("  Will filter ebpf_network events from %d known malicious IPs",
+                        len(self.mal_filter.malicious_ips))
+
+        for ebpf_source in self.ebpf_sources:
+            self._carryover_single_ebpf(ebpf_source)
+
+        logger.info("  eBPF totals: %d carried over, %d filtered",
+                     self.ebpf_events, self.ebpf_events_filtered)
+
+    def _carryover_single_ebpf(self, source_path: Path) -> None:
+        """Carry over eBPF events from a single source DB."""
+        ebpf_path = source_path
         temp_path = None
 
         # Handle .zst compressed source
@@ -657,7 +691,9 @@ class BenignV3Builder:
                 logger.warning("  eBPF source not found: %s", ebpf_path)
                 return
             logger.info("  Decompressing %s ...", ebpf_path.name)
-            temp_path = Path(tempfile.mktemp(suffix=".db", prefix="ebpf_src_"))
+            fd, temp_str = tempfile.mkstemp(suffix=".db", prefix="ebpf_src_")
+            os.close(fd)
+            temp_path = Path(temp_str)
             try:
                 subprocess.run(
                     ["zstd", "-d", str(ebpf_path), "-o", str(temp_path)],
@@ -686,14 +722,23 @@ class BenignV3Builder:
             src_conn.close()
 
             if not rows:
-                logger.warning("  No eBPF events found in source")
+                logger.warning("  No eBPF events found in %s", source_path.name)
                 return
 
-            # Insert into output DB
+            # Insert into output DB, filtering malicious IPs from network events
             dst_conn = sqlite3.connect(str(self.output_path))
             dst_conn.execute("PRAGMA journal_mode=WAL")
 
+            inserted = 0
+            filtered = 0
             for row in rows:
+                # Filter ebpf_network events from known malicious IPs
+                if (row["source"] == "ebpf_network"
+                        and row["src_ip"]
+                        and row["src_ip"] in self.mal_filter.malicious_ips):
+                    filtered += 1
+                    continue
+
                 dst_conn.execute(
                     """INSERT INTO events
                        (timestamp, source, raw_line, parsed,
@@ -706,19 +751,26 @@ class BenignV3Builder:
                         row["session_id"], row["src_ip"], row["username"], row["service"],
                     ),
                 )
+                inserted += 1
 
             dst_conn.commit()
             dst_conn.close()
 
-            self.ebpf_events = len(rows)
-            self.total_events += len(rows)
+            self.ebpf_events += inserted
+            self.ebpf_events_filtered += filtered
+            self.total_events += inserted
 
             # Track per-source counts
             for row in rows:
+                if (row["source"] == "ebpf_network"
+                        and row["src_ip"]
+                        and row["src_ip"] in self.mal_filter.malicious_ips):
+                    continue
                 src = row["source"]
                 self.events_by_source[src] = self.events_by_source.get(src, 0) + 1
 
-            logger.info("  Carried over %d eBPF events", len(rows))
+            logger.info("  %s: %d eBPF events carried over (%d filtered)",
+                        source_path.name, inserted, filtered)
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
@@ -801,6 +853,7 @@ class BenignV3Builder:
                 for s in self.source_stats
             ],
             "ebpf_events_carried_over": self.ebpf_events,
+            "ebpf_events_filtered": self.ebpf_events_filtered,
             "filter_stats": dict(self.mal_filter.hit_counts),
             "scrub_stats": dict(self.scrubber.counts),
             "verification": verification,
@@ -861,9 +914,9 @@ supported log formats (auto-detected from paths inside tarballs):
              "no PII or you'll scrub separately.",
     )
     parser.add_argument(
-        "--ebpf-source", type=Path, default=None,
-        help="Path to a prior EventStore DB (or .db.zst) to carry over "
-             "eBPF kernel events from.",
+        "--ebpf-source", action="append", type=Path, default=[],
+        help="Path to an EventStore DB (or .db.zst) containing eBPF kernel "
+             "events to carry over. Can be repeated for multiple sources.",
     )
     parser.add_argument(
         "--output", type=Path, default=Path("data/benign_v3.db"),
@@ -913,7 +966,7 @@ supported log formats (auto-detected from paths inside tarballs):
         sources=sources,
         output_path=args.output,
         scrub_config=scrub_config,
-        ebpf_source=args.ebpf_source,
+        ebpf_sources=args.ebpf_source,
     )
 
     report = builder.build()

@@ -127,6 +127,25 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] Update campaign YAML interfaces from `en0` (macOS) to `enp3s0` (Hopper/Linux)
 - [x] Re-compose experiment streams with Redis attack data — done in Phase 10 (Redis campaigns in campaigns_v2.db labeled as web_exploit/execution/discovery)
 
+## Phase 9c — Multi-Server Benign eBPF Collection
+
+Code changes complete — awaiting 24-hour collection runs.
+
+- [x] `collect_ebpf_baseline.py` — standalone DB support (no `--source` required), `--ssh-port` param
+- [x] `build_benign_v3.py` — `MaliciousFilter` IP accumulation from filtered auth/web events
+- [x] `build_benign_v3.py` — eBPF network event filtering by malicious IP during carryover
+- [x] `build_benign_v3.py` — multiple `--ebpf-source` support (`action="append"`)
+- [x] `build_benign_v3.py` — `ebpf_events_filtered` in build report
+- [x] Tests: 13 new (IP tracking, carryover filtering, multiple sources, fresh DB)
+- [x] `server/BUILD.md` — Debian 13 eBPF setup documentation
+- [ ] Install BCC on 9600baud, hopper, frodo (Debian 13.4, `apt install bpfcc-tools python3-bpfcc`)
+- [ ] Configure sudoers on each server (`/etc/sudoers.d/ebpf_collector`)
+- [ ] Smoke test collector on each server (deploy via scp, 30s run)
+- [ ] Run 24-hour collection: `scripts/collect_ebpf_baseline.py --duration 86400` on all 3 servers
+- [ ] Rebuild benign_v3.db: `scripts/build_benign_v3.py --ebpf-source data/ebpf_*.db --compose`
+- [ ] Validate all 4 experiment streams
+- [ ] Update CLAUDE.md data versions with new eBPF event counts
+
 ## Phase 13a — Structured eBPF Observation Channels
 
 Convert eBPF text channels to fixed-width numeric arrays. See ROADMAP.md Phase 13 for full design.

@@ -163,6 +163,26 @@ Added `redis_lua_escape` attack module — exploits the Debian-specific Lua sand
 - [x] Campaign YAMLs updated from `en0` (macOS) to `enp3s0` (Hopper/Linux) for all 8 aliased-strategy configs
 - [x] Re-compose experiment streams with Redis attack data — completed as part of Phase 10 recompose (campaigns_v2.db already included Redis campaigns, labeled as web_exploit/execution/discovery by MITRE stage)
 
+## Phase 9c — Multi-Server Benign eBPF Collection
+
+Extend benign eBPF kernel telemetry from a 1-hour single-server manual collection (997 events) to 24-hour multi-server collections. Without this, v2 structured eBPF channels are sparse during benign periods, biasing the agent to associate eBPF activity with attacks.
+
+**Sources:** 3 Debian 13.4 servers collected for 24 hours each: 9600baud (public web), hopper (lab/GPU), frodo (hypervisor). Combined data scrubbed to match isildur/192.168.2.201.
+
+**Key concern:** 9600baud gets real attacks — eBPF network events from attacker IPs must be filtered.
+
+- [x] `collect_ebpf_baseline.py` — allow omitting `--source` (create fresh DB), add `--ssh-port`
+- [x] `build_benign_v3.py` — `MaliciousFilter` accumulates IPs from filtered auth/web events
+- [x] `build_benign_v3.py` — `_carryover_ebpf()` filters `ebpf_network` events from malicious IPs
+- [x] `build_benign_v3.py` — `--ebpf-source` supports multiple values (`action="append"`)
+- [x] Tests: 13 new tests for IP tracking, eBPF filtering, multiple sources, report counts
+- [x] `server/BUILD.md` — Debian 13 eBPF setup section
+- [ ] Install BCC on 9600baud, hopper, frodo (Debian 13.4)
+- [ ] Run 24-hour eBPF collection on all 3 servers
+- [ ] Rebuild benign_v3.db with eBPF from 3 servers
+- [ ] Re-compose and validate all 4 experiment streams
+- [ ] Update CLAUDE.md with new eBPF event counts
+
 ## Phase 10 — Benign Data Rebuild (v3)
 
 Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC staff names, phone numbers, org names in URL query parameters) that survived the original hostname scrub. The prior Zenodo record was deleted.

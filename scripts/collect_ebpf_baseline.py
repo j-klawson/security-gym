@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
-"""Collect benign eBPF kernel events from Isildur and append to benign_v2.db.
+"""Collect benign eBPF kernel events from a remote server.
 
-Copies the existing benign.db (log events) then runs the eBPF collector on
-Isildur for a configurable duration to capture baseline kernel activity.
-All eBPF events are labeled benign (is_malicious=0) since no attacks run
-during collection.
+Runs the eBPF collector on a remote host for a configurable duration to
+capture baseline kernel activity. All eBPF events are labeled benign
+(is_malicious=0) since no attacks run during collection.
+
+If --source is given, copies that DB first and appends eBPF events to it.
+If --source is omitted, creates a fresh empty EventStore DB.
 
 Usage:
-    python scripts/collect_ebpf_baseline.py --duration 3600 --output data/benign_v2.db
-    python scripts/collect_ebpf_baseline.py --duration 300 --output data/benign_v2.db --dry-run
+    # Fresh DB (standalone eBPF collection)
+    python scripts/collect_ebpf_baseline.py --duration 86400 --host 10.0.0.1 --output data/ebpf_server.db
+
+    # Append to existing DB
+    python scripts/collect_ebpf_baseline.py --source data/benign.db --duration 3600 --output data/benign_v2.db
+
+    # Non-standard SSH port
+    python scripts/collect_ebpf_baseline.py --duration 3600 --host 10.0.0.1 --ssh-port 2222 --output data/ebpf.db
+
+    # Dry run
+    python scripts/collect_ebpf_baseline.py --duration 300 --output data/ebpf.db --dry-run
 """
 
 from __future__ import annotations
@@ -43,15 +54,15 @@ DEFAULT_SSH_KEY = "~/.ssh/isildur_research"
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Collect benign eBPF baseline from Isildur",
+        description="Collect benign eBPF baseline from a remote server",
     )
     parser.add_argument(
         "--duration", type=int, default=3600,
         help="Collection duration in seconds (default: 3600)",
     )
     parser.add_argument(
-        "--source", type=Path, default=Path(DEFAULT_SOURCE_DB),
-        help=f"Source benign DB to copy (default: {DEFAULT_SOURCE_DB})",
+        "--source", type=Path, default=None,
+        help="Source benign DB to copy as base. If omitted, creates a fresh empty DB.",
     )
     parser.add_argument(
         "--output", type=Path, default=Path(DEFAULT_OUTPUT_DB),
@@ -70,6 +81,10 @@ def main() -> int:
         help=f"SSH key path (default: {DEFAULT_SSH_KEY})",
     )
     parser.add_argument(
+        "--ssh-port", type=int, default=22,
+        help="SSH port (default: 22)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Show what would happen without executing",
     )
@@ -77,22 +92,29 @@ def main() -> int:
 
     if args.dry_run:
         logger.info("DRY RUN — no changes will be made")
-        logger.info("Would copy %s → %s", args.source, args.output)
-        logger.info("Would collect eBPF events for %ds from %s", args.duration, args.host)
+        if args.source:
+            logger.info("Would copy %s → %s", args.source, args.output)
+        else:
+            logger.info("Would create fresh DB at %s", args.output)
+        logger.info("Would collect eBPF events for %ds from %s:%d",
+                     args.duration, args.host, args.ssh_port)
         logger.info("Would insert events into %s with is_malicious=0", args.output)
         return 0
 
-    # Step 1: Copy source DB
-    if not args.source.exists():
-        logger.error("Source DB not found: %s", args.source)
-        return 1
-
+    # Step 1: Prepare output DB
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.output.exists():
         logger.warning("Output DB already exists: %s (will append eBPF events)", args.output)
-    else:
+    elif args.source:
+        if not args.source.exists():
+            logger.error("Source DB not found: %s", args.source)
+            return 1
         logger.info("Copying %s → %s", args.source, args.output)
         shutil.copy2(args.source, args.output)
+    else:
+        logger.info("Creating fresh EventStore at %s", args.output)
+        store = EventStore(args.output, mode="w")
+        store.close()
 
     # Step 2: Start eBPF collector
     logger.info("Starting eBPF collector on %s", args.host)
@@ -100,6 +122,7 @@ def main() -> int:
         host=args.host,
         ssh_user=args.ssh_user,
         ssh_key=args.ssh_key,
+        ssh_port=args.ssh_port,
     )
 
     try:
