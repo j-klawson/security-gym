@@ -129,7 +129,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 
 ## Phase 9c — Multi-Server Benign eBPF Collection
 
-24-hour collection complete on all 3 servers (2026-03-22). Ready for benign_v3.db rebuild.
+24-hour collection complete on all 3 servers (2026-03-22). benign_v4.db built, experiment streams composed and validated.
 
 - [x] `collect_ebpf_baseline.py` — standalone DB support (no `--source` required), `--ssh-port` param
 - [x] `build_benign.py` — `MaliciousFilter` IP accumulation from filtered auth/web events
@@ -145,9 +145,12 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
   - frodo: 2,355,832 events (`data/ebpf_frodo.db`)
   - 9600baud: 785,473 events (`data/ebpf_9600baud.db`)
   - hopper: 102,078 events (`data/ebpf_hopper.db`)
-- [ ] Build benign_v4.db: `scripts/build_benign.py --base-db data/benign_v3.db --source sak:data/sak_var_log.tar.bz --ebpf-source data/ebpf_frodo.db --ebpf-source data/ebpf_9600baud.db --ebpf-source data/ebpf_hopper.db --output data/benign_v4.db --compose`
-- [ ] Validate all 4 v4 experiment streams
-- [ ] Update CLAUDE.md data versions with new eBPF event counts
+- [x] Rename `build_benign_v3.py` → `build_benign.py` (version-agnostic), add `--base-db` mode
+- [x] Build benign_v4.db: 11,159,241 events (7.9M logs + 3.24M eBPF), all checks PASS
+- [x] Compose and validate all 4 v4 experiment streams
+- [x] Update CLAUDE.md data versions with new eBPF event counts
+- [ ] Publish v4 dataset to Zenodo (new version of DOI 10.5281/zenodo.18901542): benign_v4.db.zst, campaigns_v2.db.zst, 4 v4 experiment streams, DATASET_README.md
+- [ ] Update CITATION.cff and CLAUDE.md with new Zenodo version DOI
 
 ## Phase 13a — Structured eBPF Observation Channels
 
