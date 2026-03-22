@@ -26,25 +26,25 @@ Supported log formats (auto-detected from file paths in tarballs):
 Usage — process your own server logs:
 
   # Basic: one server
-  python scripts/build_benign_v3.py \\
+  python scripts/build_benign.py \\
       --source myserver:/path/to/myserver-var-log.tar \\
       --output data/benign.db
 
   # Multiple servers
-  python scripts/build_benign_v3.py \\
+  python scripts/build_benign.py \\
       --source web1:/path/to/web1_logs.tar \\
       --source db1:/path/to/db1_logs.tar \\
       --source mail:/path/to/mail_logs.tar \\
       --output data/benign.db
 
   # With PII scrubbing (custom config)
-  python scripts/build_benign_v3.py \\
+  python scripts/build_benign.py \\
       --source web1:/path/to/web1_logs.tar \\
       --scrub-config my_scrub.json \\
       --output data/benign.db
 
   # With eBPF carryover from multiple servers
-  python scripts/build_benign_v3.py \\
+  python scripts/build_benign.py \\
       --source web1:/path/to/web1_logs.tar \\
       --ebpf-source data/ebpf_server1.db \\
       --ebpf-source data/ebpf_server2.db \\
@@ -52,7 +52,7 @@ Usage — process your own server logs:
       --output data/benign.db
 
   # Build + update composition configs + re-compose experiment streams
-  python scripts/build_benign_v3.py \\
+  python scripts/build_benign.py \\
       --source web1:/path/to/web1_logs.tar \\
       --output data/benign_v3.db \\
       --compose
@@ -96,6 +96,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
@@ -294,7 +295,7 @@ class ScrubConfig:
 
     @classmethod
     def default(cls) -> ScrubConfig:
-        """Built-in scrub config used to build the published benign_v3.db."""
+        """Built-in scrub config used to build the published benign dataset."""
         return cls(
             replacements=[
                 # All sources mapped to match campaign target: isildur / 192.168.2.201
@@ -305,6 +306,7 @@ class ScrubConfig:
                 ("9600baud.net", "isildur.internal"),
                 ("9600baud", "isildur"),  # catch URL paths like /images/9600baud-favicon.png
                 ("keithlawson.me", "isildur.internal"),
+                ("keithlawson", "researcher"),  # eBPF file paths: /etc/userdb/keithlawson.user
                 ("nowhere.ca", "isildur.internal"),
                 ("172-105-102-54.cprapid.com", "isildur.internal"),
                 ("172-105-102-54.ip.linodeusercontent.com", "isildur.internal"),
@@ -500,7 +502,7 @@ class SourceStats:
     events_kept: int = 0
 
 
-class BenignV3Builder:
+class BenignBuilder:
     """Orchestrates the full pipeline. Produces BuildReport."""
 
     def __init__(
@@ -509,11 +511,13 @@ class BenignV3Builder:
         output_path: Path,
         scrub_config: ScrubConfig,
         ebpf_sources: list[Path] | None = None,
+        base_db: Path | None = None,
     ):
         self.sources = sources
         self.output_path = output_path
         self.scrub_config = scrub_config
         self.ebpf_sources = ebpf_sources or []
+        self.base_db = base_db
         self.mal_filter = MaliciousFilter()
         self.scrubber = PIIScrubber(config=scrub_config)
         self.source_stats: list[SourceStats] = []
@@ -524,18 +528,44 @@ class BenignV3Builder:
 
     def build(self) -> dict:
         """Run full pipeline and return build report dict."""
+        import hashlib
+        import shutil
+
         # Stage 0: Prep
         logger.info("Stage 0: Prep")
         git_sha = self._get_git_sha()
-        if self.output_path.exists():
-            self.output_path.unlink()
+
+        if self.base_db:
+            # Append mode: copy base DB, process sources for IP accumulation only
+            logger.info("  Base DB mode: copying %s → %s", self.base_db, self.output_path)
+            shutil.copy2(self.base_db, self.output_path)
+            # Count existing events in base DB
+            conn = sqlite3.connect(str(self.output_path))
+            base_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            conn.close()
+            self.total_events = base_count
+            # Count per-source from base
+            conn = sqlite3.connect(str(self.output_path))
+            for row in conn.execute("SELECT source, COUNT(*) FROM events GROUP BY source"):
+                self.events_by_source[row[0]] = row[1]
+            conn.close()
+            logger.info("  Base DB has %d events", base_count)
+        else:
+            if self.output_path.exists():
+                self.output_path.unlink()
+
         logger.info("  Git SHA: %s", git_sha)
         logger.info("  Output: %s", self.output_path)
 
         # Stages 1-5: Extract → Parse → Filter → Scrub → Insert
-        with EventStore(self.output_path, mode="w") as store:
+        # In base_db mode: parse for IP accumulation only (no insert)
+        if self.base_db:
             for source in self.sources:
-                self._process_source(source, store)
+                self._accumulate_ips(source)
+        else:
+            with EventStore(self.output_path, mode="w") as store:
+                for source in self.sources:
+                    self._process_source(source, store)
 
         # Stage 6: eBPF carryover
         self._carryover_ebpf()
@@ -561,6 +591,15 @@ class BenignV3Builder:
         conn.execute("VACUUM")
         conn.close()
 
+        # SHA256 integrity hash
+        logger.info("Computing SHA256 hash...")
+        sha256 = hashlib.sha256()
+        with open(self.output_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        report["sha256"] = sha256.hexdigest()
+        logger.info("  SHA256: %s", report["sha256"])
+
         return report
 
     def _process_source(self, source: SourceConfig, store: EventStore) -> None:
@@ -569,7 +608,7 @@ class BenignV3Builder:
 
         logger.info("Stage 1-5: Processing %s (%s)", source.name, source.tarball.name)
 
-        with tempfile.TemporaryDirectory(prefix=f"benign_v3_{source.name}_") as tmp_dir:
+        with tempfile.TemporaryDirectory(prefix=f"benign_{source.name}_") as tmp_dir:
             # Stage 1: Extract
             logger.info("  Extracting %s ...", source.tarball.name)
             with tarfile.open(source.tarball) as tf:
@@ -639,6 +678,72 @@ class BenignV3Builder:
         logger.info(
             "  %s: parsed=%d, filtered=%d, kept=%d",
             source.name, stats.events_parsed, stats.events_filtered, stats.events_kept,
+        )
+        self.source_stats.append(stats)
+
+    def _accumulate_ips(self, source: SourceConfig) -> None:
+        """Parse source tarball for IP accumulation only (no insertion).
+
+        Used in --base-db mode where log events are already in the base DB.
+        Runs through MaliciousFilter to identify attacker IPs for eBPF filtering.
+        """
+        stats = SourceStats(tarball=source.tarball.name, name=source.name)
+        logger.info("IP accumulation: Processing %s (%s)", source.name, source.tarball.name)
+
+        with tempfile.TemporaryDirectory(prefix=f"benign_{source.name}_") as tmp_dir:
+            # Extract
+            logger.info("  Extracting %s ...", source.tarball.name)
+            with tarfile.open(source.tarball) as tf:
+                while True:
+                    try:
+                        member = tf.next()
+                    except tarfile.ReadError:
+                        logger.warning("  Truncated tar archive, processing what was read")
+                        break
+                    if member is None:
+                        break
+                    if not member.isfile():
+                        continue
+                    try:
+                        tf.extract(member, tmp_dir, filter="data")  # noqa: S202
+                    except (tarfile.LinkOutsideDestinationError, tarfile.ReadError) as exc:
+                        logger.debug("  Skipping tar member %s: %s", member.name, exc)
+
+            root = Path(tmp_dir)
+
+            # Route files to parsers
+            file_plan: list[tuple[Path, str, str]] = []
+            skipped = 0
+            for file_path in sorted(root.rglob("*")):
+                if not file_path.is_file():
+                    continue
+                rel = str(file_path.relative_to(root))
+                parser_name = _route_file(rel)
+                if parser_name is None:
+                    skipped += 1
+                    continue
+                file_plan.append((file_path, rel, parser_name))
+
+            logger.info("  Found %d parseable files (%d skipped)", len(file_plan), skipped)
+
+            # Parse and filter (accumulate IPs only, no scrub/insert)
+            for file_path, rel, parser_name in file_plan:
+                logger.info("  Parsing: %s → %s", rel, parser_name)
+                events = _parse_file(file_path, parser_name)
+                stats.files_parsed += 1
+                stats.events_parsed += len(events)
+
+                for event in events:
+                    keep, rule = self.mal_filter.check(event)
+                    if not keep:
+                        stats.events_filtered += 1
+                    else:
+                        stats.events_kept += 1
+
+        logger.info(
+            "  %s: parsed=%d, filtered=%d (accumulated %d malicious IPs)",
+            source.name, stats.events_parsed, stats.events_filtered,
+            len(self.mal_filter.malicious_ips),
         )
         self.source_stats.append(stats)
 
@@ -731,6 +836,7 @@ class BenignV3Builder:
 
             inserted = 0
             filtered = 0
+            batch = []
             for row in rows:
                 # Filter ebpf_network events from known malicious IPs
                 if (row["source"] == "ebpf_network"
@@ -739,19 +845,33 @@ class BenignV3Builder:
                     filtered += 1
                     continue
 
-                dst_conn.execute(
-                    """INSERT INTO events
-                       (timestamp, source, raw_line, parsed,
-                        is_malicious, campaign_id, attack_type, attack_stage, severity,
-                        session_id, src_ip, username, service)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        row["timestamp"], row["source"], row["raw_line"], row["parsed"],
-                        0, None, None, None, None,
-                        row["session_id"], row["src_ip"], row["username"], row["service"],
-                    ),
-                )
+                # Apply PII scrubbing to eBPF events
+                raw_line = row["raw_line"]
+                parsed = row["parsed"]
+                src_ip = row["src_ip"]
+                if self.scrubber.config.replacements:
+                    for old, new in self.scrubber.config.replacements:
+                        raw_line = raw_line.replace(old, new)
+                        if parsed:
+                            parsed = parsed.replace(old, new)
+                        if src_ip:
+                            src_ip = src_ip.replace(old, new)
+
+                batch.append((
+                    row["timestamp"], row["source"], raw_line, parsed,
+                    0, None, None, None, None,
+                    row["session_id"], src_ip, row["username"], row["service"],
+                ))
                 inserted += 1
+
+            dst_conn.executemany(
+                """INSERT INTO events
+                   (timestamp, source, raw_line, parsed,
+                    is_malicious, campaign_id, attack_type, attack_stage, severity,
+                    session_id, src_ip, username, service)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                batch,
+            )
 
             dst_conn.commit()
             dst_conn.close()
@@ -838,9 +958,13 @@ class BenignV3Builder:
 
     def _build_report(self, git_sha: str, verification: dict) -> dict:
         """Build the audit report dict."""
-        return {
+        report: dict = {
             "build_date": datetime.now(timezone.utc).isoformat(),
             "git_sha": git_sha,
+        }
+        if self.base_db:
+            report["base_db"] = str(self.base_db)
+        report.update({
             "sources": [
                 {
                     "tarball": s.tarball,
@@ -859,7 +983,8 @@ class BenignV3Builder:
             "verification": verification,
             "final_counts": dict(self.events_by_source),
             "total_events": self.total_events,
-        }
+        })
+        return report
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────
@@ -897,10 +1022,18 @@ supported log formats (auto-detected from paths inside tarballs):
 """,
     )
     parser.add_argument(
-        "--source", action="append", required=True, metavar="NAME:PATH",
+        "--source", action="append", metavar="NAME:PATH",
         help="Server log tarball to import. NAME is a label for reporting "
              "(e.g. 'webserver'). PATH is the tarball. Can be repeated. "
-             "If NAME: prefix is omitted, name is inferred from filename.",
+             "If NAME: prefix is omitted, name is inferred from filename. "
+             "In --base-db mode, sources are parsed for IP accumulation only "
+             "(no insertion). Required unless --base-db is used alone.",
+    )
+    parser.add_argument(
+        "--base-db", type=Path, default=None, metavar="DB",
+        help="Path to an existing benign DB to use as a base. Events are NOT "
+             "re-imported — only eBPF carryover and IP accumulation from "
+             "--source tarballs are performed. Use for incremental builds.",
     )
     parser.add_argument(
         "--scrub-config", type=Path, default=None, metavar="JSON",
@@ -919,8 +1052,8 @@ supported log formats (auto-detected from paths inside tarballs):
              "events to carry over. Can be repeated for multiple sources.",
     )
     parser.add_argument(
-        "--output", type=Path, default=Path("data/benign_v3.db"),
-        help="Output database path (default: data/benign_v3.db)",
+        "--output", type=Path, default=Path("data/benign_v4.db"),
+        help="Output database path (default: data/benign_v4.db)",
     )
     parser.add_argument(
         "--report", type=Path, default=None,
@@ -942,9 +1075,13 @@ supported log formats (auto-detected from paths inside tarballs):
     )
 
     # Parse sources
-    sources = [_parse_source(s) for s in args.source]
+    sources = [_parse_source(s) for s in args.source] if args.source else []
 
     # Validate inputs
+    if not sources and not args.base_db:
+        parser.error("Either --source or --base-db is required")
+    if args.base_db and not args.base_db.exists():
+        parser.error(f"Base DB not found: {args.base_db}")
     for src in sources:
         if not src.tarball.exists():
             parser.error(f"Source tarball not found: {src.tarball}")
@@ -962,11 +1099,12 @@ supported log formats (auto-detected from paths inside tarballs):
         scrub_config = ScrubConfig.default()
         logger.info("Using built-in scrub config (for published dataset)")
 
-    builder = BenignV3Builder(
+    builder = BenignBuilder(
         sources=sources,
         output_path=args.output,
         scrub_config=scrub_config,
         ebpf_sources=args.ebpf_source,
+        base_db=args.base_db,
     )
 
     report = builder.build()
@@ -1021,7 +1159,7 @@ def _update_configs_and_compose(output_db: Path) -> None:
             continue
         logger.info("Composing %s ...", config_name)
         subprocess.run(
-            ["python3", "-m", "attacks", "compose", str(config_path)],
+            [sys.executable, "-m", "attacks", "compose", str(config_path)],
             check=True,
         )
         logger.info("  Done.")

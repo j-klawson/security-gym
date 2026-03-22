@@ -1,4 +1,4 @@
-"""Tests for eBPF malicious traffic filtering in build_benign_v3.py."""
+"""Tests for eBPF malicious traffic filtering in build_benign.py."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 # Add scripts/ to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from build_benign_v3 import BenignV3Builder, MaliciousFilter, ScrubConfig
+from build_benign import BenignBuilder, MaliciousFilter, ScrubConfig
 from security_gym.data.event_store import EventStore
 from security_gym.parsers.base import ParsedEvent
 
@@ -174,7 +174,7 @@ class TestEbpfCarryoverFiltering:
              "raw_line": "execve pid=300 comm=bash"},
         ])
 
-        builder = BenignV3Builder(
+        builder = BenignBuilder(
             sources=[],
             output_path=output_db,
             scrub_config=ScrubConfig.empty(),
@@ -215,7 +215,7 @@ class TestEbpfCarryoverFiltering:
              "raw_line": "openat pid=100 /etc/passwd"},
         ])
 
-        builder = BenignV3Builder(
+        builder = BenignBuilder(
             sources=[],
             output_path=output_db,
             scrub_config=ScrubConfig.empty(),
@@ -247,7 +247,7 @@ class TestEbpfCarryoverFiltering:
              "raw_line": "execve pid=300 comm=ls"},
         ])
 
-        builder = BenignV3Builder(
+        builder = BenignBuilder(
             sources=[],
             output_path=output_db,
             scrub_config=ScrubConfig.empty(),
@@ -280,7 +280,7 @@ class TestEbpfCarryoverFiltering:
              "raw_line": "connect pid=3"},
         ])
 
-        builder = BenignV3Builder(
+        builder = BenignBuilder(
             sources=[],
             output_path=output_db,
             scrub_config=ScrubConfig.empty(),
@@ -307,7 +307,7 @@ class TestEbpfCarryoverFiltering:
              "raw_line": "connect pid=100"},
         ])
 
-        builder = BenignV3Builder(
+        builder = BenignBuilder(
             sources=[],
             output_path=output_db,
             scrub_config=ScrubConfig.empty(),

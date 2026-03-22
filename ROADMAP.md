@@ -172,9 +172,9 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
 **Key concern:** 9600baud gets real attacks — eBPF network events from attacker IPs must be filtered.
 
 - [x] `collect_ebpf_baseline.py` — allow omitting `--source` (create fresh DB), add `--ssh-port`
-- [x] `build_benign_v3.py` — `MaliciousFilter` accumulates IPs from filtered auth/web events
-- [x] `build_benign_v3.py` — `_carryover_ebpf()` filters `ebpf_network` events from malicious IPs
-- [x] `build_benign_v3.py` — `--ebpf-source` supports multiple values (`action="append"`)
+- [x] `build_benign.py` — `MaliciousFilter` accumulates IPs from filtered auth/web events
+- [x] `build_benign.py` — `_carryover_ebpf()` filters `ebpf_network` events from malicious IPs
+- [x] `build_benign.py` — `--ebpf-source` supports multiple values (`action="append"`)
 - [x] Tests: 13 new tests for IP tracking, eBPF filtering, multiple sources, report counts
 - [x] `server/BUILD.md` — Debian 13 eBPF setup section
 - [x] Install BCC + kernel headers on 9600baud, hopper, frodo (Debian 13.4, BCC 0.31)
@@ -183,15 +183,15 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
   - frodo: 2,355,832 events (`data/ebpf_frodo.db`) — hypervisor, VMs, high file/process activity
   - 9600baud: 785,473 events (`data/ebpf_9600baud.db`) — public web server, real internet traffic
   - hopper: 102,078 events (`data/ebpf_hopper.db`) — lab/GPU server, quieter baseline
-- [ ] Rebuild benign_v3.db with eBPF from 3 servers
-- [ ] Re-compose and validate all 4 experiment streams
+- [ ] Build benign_v4.db from v3 base + eBPF from 3 servers (`--base-db` mode)
+- [ ] Re-compose v4 experiment streams and validate
 - [ ] Update CLAUDE.md with new eBPF event counts
 
 ## Phase 10 — Benign Data Rebuild (v3)
 
 Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC staff names, phone numbers, org names in URL query parameters) that survived the original hostname scrub. The prior Zenodo record was deleted.
 
-- [x] Create `scripts/build_benign_v3.py` — generic, reproducible build tool accepting any server log tarballs via `--source NAME:PATH`
+- [x] Create `scripts/build_benign.py` (originally `build_benign_v3.py`) — generic, reproducible build tool accepting any server log tarballs via `--source NAME:PATH`
 - [x] 9-stage pipeline: Prep → Extract → Parse → Filter → Scrub → Insert → eBPF carryover → Sort → Verify → Report
 - [x] Malicious traffic filtering: web attacks (path traversal, SQLi, XSS, JNDI, RFI, scanner UAs, exploit paths, suspicious methods) + auth attacks (failed password, invalid user, preauth close, max auth attempts)
 - [x] PII scrubbing via external JSON config (`--scrub-config`) or `--no-scrub` for logs without PII; case-insensitive replacements; default config maps all sources to campaign target (`isildur` / `192.168.2.201`) with `.internal` TLD domains

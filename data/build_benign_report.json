@@ -1,0 +1,48 @@
+{
+  "build_date": "2026-03-22T13:04:51.901169+00:00",
+  "git_sha": "6984ac32f6fda318b0b5b98d5eb96e17c7e63ead",
+  "base_db": "data/benign_v3.db",
+  "sources": [
+    {
+      "tarball": "sak_var_log.tar.bz",
+      "name": "sak",
+      "files_parsed": 30,
+      "events_parsed": 112094,
+      "events_filtered": 30572,
+      "events_kept": 81522
+    }
+  ],
+  "ebpf_events_carried_over": 3243383,
+  "ebpf_events_filtered": 0,
+  "filter_stats": {
+    "web_access": {
+      "suspicious_method": 2110,
+      "exploit_paths": 28228,
+      "shell_access": 112,
+      "rfi": 41,
+      "scanner_ua": 25,
+      "path_traversal": 54,
+      "xss": 2
+    }
+  },
+  "scrub_stats": {},
+  "verification": {
+    "pii_absence": "PASS",
+    "no_attacks": "PASS",
+    "source_distribution": "PASS",
+    "temporal_order": "PASS",
+    "all_benign": "PASS",
+    "event_count": "11159241"
+  },
+  "final_counts": {
+    "auth_log": 3737,
+    "syslog": 13599,
+    "web_access": 7898456,
+    "web_error": 66,
+    "ebpf_process": 144752,
+    "ebpf_file": 3019300,
+    "ebpf_network": 79331
+  },
+  "total_events": 11159241,
+  "sha256": "81412cdae40ddfd4d8b3c9cd9c5e3055cd5e29fa0040094b6dcd9dfbb9ec6abb"
+}

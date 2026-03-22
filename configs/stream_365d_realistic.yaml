@@ -20,7 +20,7 @@ stream:
   seed: 2026
 
   benign:
-    db: ../data/benign_v3.db
+    db: ../data/benign_v4.db
 
   attacks:
     db: ../data/campaigns_v2.db
@@ -43,4 +43,4 @@ stream:
       execution: 0.05           # TA0002 — post-auth (rare success)
 
   output:
-    db: ../data/exp_365d_realistic.db
+    db: ../data/exp_365d_realistic_v4.db
