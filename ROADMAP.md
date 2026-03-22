@@ -183,9 +183,11 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
   - frodo: 2,355,832 events (`data/ebpf_frodo.db`) — hypervisor, VMs, high file/process activity
   - 9600baud: 785,473 events (`data/ebpf_9600baud.db`) — public web server, real internet traffic
   - hopper: 102,078 events (`data/ebpf_hopper.db`) — lab/GPU server, quieter baseline
-- [ ] Build benign_v4.db from v3 base + eBPF from 3 servers (`--base-db` mode)
-- [ ] Re-compose v4 experiment streams and validate
-- [ ] Update CLAUDE.md with new eBPF event counts
+- [x] Rename `build_benign_v3.py` → `build_benign.py`, add `--base-db` incremental mode, PII scrub on eBPF carryover, SHA256 hash in report
+- [x] Build benign_v4.db from v3 base + eBPF from 3 servers: 11,159,241 events (7.9M logs + 3.24M eBPF), 5.8 GB, all checks PASS
+- [x] Compose and validate v4 experiment streams (exp_7d_brute_v4.db, exp_30d_heavy_v4.db, exp01_90d_v4.db, exp_365d_realistic_v4.db)
+- [x] Update CLAUDE.md with new eBPF event counts
+- [ ] Publish v4 dataset to Zenodo (new version of DOI 10.5281/zenodo.18901542)
 
 ## Phase 10 — Benign Data Rebuild (v3)
 
