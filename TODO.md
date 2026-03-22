@@ -129,7 +129,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 
 ## Phase 9c — Multi-Server Benign eBPF Collection
 
-Code changes complete — awaiting 24-hour collection runs.
+24-hour collection complete on all 3 servers (2026-03-22). Ready for benign_v3.db rebuild.
 
 - [x] `collect_ebpf_baseline.py` — standalone DB support (no `--source` required), `--ssh-port` param
 - [x] `build_benign_v3.py` — `MaliciousFilter` IP accumulation from filtered auth/web events
@@ -138,10 +138,13 @@ Code changes complete — awaiting 24-hour collection runs.
 - [x] `build_benign_v3.py` — `ebpf_events_filtered` in build report
 - [x] Tests: 13 new (IP tracking, carryover filtering, multiple sources, fresh DB)
 - [x] `server/BUILD.md` — Debian 13 eBPF setup documentation
-- [ ] Install BCC on 9600baud, hopper, frodo (Debian 13.4, `apt install bpfcc-tools python3-bpfcc`)
-- [ ] Configure sudoers on each server (`/etc/sudoers.d/ebpf_collector`)
-- [ ] Smoke test collector on each server (deploy via scp, 30s run)
-- [ ] Run 24-hour collection: `scripts/collect_ebpf_baseline.py --duration 86400` on all 3 servers
+- [x] Install BCC on 9600baud, hopper, frodo (Debian 13.4, `apt install bpfcc-tools python3-bpfcc linux-headers-$(uname -r)`)
+- [x] Configure sudoers on each server (`/etc/sudoers.d/ebpf_collector`)
+- [x] Smoke test collector on each server (deploy via scp, 10s run)
+- [x] Run 24-hour collection on all 3 servers — 3,243,383 total eBPF events
+  - frodo: 2,355,832 events (`data/ebpf_frodo.db`)
+  - 9600baud: 785,473 events (`data/ebpf_9600baud.db`)
+  - hopper: 102,078 events (`data/ebpf_hopper.db`)
 - [ ] Rebuild benign_v3.db: `scripts/build_benign_v3.py --ebpf-source data/ebpf_*.db --compose`
 - [ ] Validate all 4 experiment streams
 - [ ] Update CLAUDE.md data versions with new eBPF event counts
@@ -150,15 +153,8 @@ Code changes complete — awaiting 24-hour collection runs.
 
 Convert eBPF text channels to fixed-width numeric arrays. See ROADMAP.md Phase 13 for full design.
 
-- [ ] Add xxhash to dependencies (`pyproject.toml` core deps)
-- [ ] Create `src/security_gym/features/hashing.py` — `hash_comm()`, `hash_path()` using xxhash64 truncated to uint32
-- [ ] Create `src/security_gym/envs/structured_buffer.py` — `StructuredRingBuffer` class: `np.ndarray(shape=(capacity, width))` with circular write index, `snapshot() -> np.ndarray` method
-- [ ] Add `fields_json` column to EventStore schema v3 (optional, nullable) for pre-parsed structured fields
-- [ ] eBPF raw_line re-parser: `parse_ebpf_line(raw: str) -> dict[str, int|float]` to extract typed fields from existing text format (bridge until EventStore stores structured fields natively)
-- [ ] Update `log_stream_env.py`: structured ring buffers for eBPF channels, text deques for log channels
-- [ ] Update `scan_stream.py` (SecurityGymStream adapter): matching structured buffers
-- [ ] Register `SecurityLogStream-v2` with hybrid observation space
-- [ ] Tests: hash determinism, ring buffer wraparound + snapshot, observation space shape, mixed text+structured obs
+Phase 13a implementation complete (see ROADMAP.md). One remaining item:
+
 - [ ] Benchmark: v1 (text) vs v2 (hybrid) on exp_7d_brute.db with rlsecd
 
 ## Phase 13b — eBPF LSM Hooks

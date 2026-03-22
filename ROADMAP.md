@@ -177,8 +177,12 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
 - [x] `build_benign_v3.py` — `--ebpf-source` supports multiple values (`action="append"`)
 - [x] Tests: 13 new tests for IP tracking, eBPF filtering, multiple sources, report counts
 - [x] `server/BUILD.md` — Debian 13 eBPF setup section
-- [ ] Install BCC on 9600baud, hopper, frodo (Debian 13.4)
-- [ ] Run 24-hour eBPF collection on all 3 servers
+- [x] Install BCC + kernel headers on 9600baud, hopper, frodo (Debian 13.4, BCC 0.31)
+- [x] Configure sudoers on each server (`/etc/sudoers.d/ebpf_collector`)
+- [x] Run 24-hour eBPF collection on all 3 servers (2026-03-21/22) — 3,243,383 total events
+  - frodo: 2,355,832 events (`data/ebpf_frodo.db`) — hypervisor, VMs, high file/process activity
+  - 9600baud: 785,473 events (`data/ebpf_9600baud.db`) — public web server, real internet traffic
+  - hopper: 102,078 events (`data/ebpf_hopper.db`) — lab/GPU server, quieter baseline
 - [ ] Rebuild benign_v3.db with eBPF from 3 servers
 - [ ] Re-compose and validate all 4 experiment streams
 - [ ] Update CLAUDE.md with new eBPF event counts
