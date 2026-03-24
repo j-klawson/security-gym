@@ -215,7 +215,7 @@ def _enrich_ebpf_fields(
                 e["src_ip"]
                 for e in campaign_events
                 if e.get("src_ip")
-                and e["src_ip"] != "0.0.0.0"
+                and e["src_ip"] != "0.0.0.0"  # nosec B104
                 and e.get("source") not in _EBPF_SOURCES
             ]
             if not ips:
@@ -231,7 +231,7 @@ def _enrich_ebpf_fields(
             enriched = 0
             for e in campaign_events:
                 if e.get("source") in _EBPF_SOURCES:
-                    if not e.get("src_ip") or e["src_ip"] == "0.0.0.0":
+                    if not e.get("src_ip") or e["src_ip"] == "0.0.0.0":  # nosec B104
                         e["src_ip"] = dominant_ip
                     if not e.get("session_id"):
                         e["session_id"] = ebpf_session_id
