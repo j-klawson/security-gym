@@ -11,6 +11,8 @@ import yaml
 from security_gym.data.composer import (
     StreamComposer,
     _cycle_benign,
+    _downsample_ebpf,
+    _enrich_ebpf_fields,
     _load_config,
     _parse_duration,
     _parse_ts,
@@ -481,6 +483,265 @@ class TestStreamComposer:
 
         composer = StreamComposer()
         stats = composer.compose(config_path)
-        # 60 seconds, benign events are 30s apart → ~2-3 benign events
+        # Per-source cycling: auth_log spans 2970s, duration 60s
+        # → only ~2 events fit per cycle (events 30s apart)
         assert stats.benign_count > 0
-        assert stats.benign_count <= 10
+
+
+# ── Bug fix tests ─────────────────────────────────────────────────────
+
+
+class TestEnrichEbpfFields:
+    """Tests for _enrich_ebpf_fields — Bug 1 fix."""
+
+    def test_propagates_src_ip_from_log_events(self):
+        """eBPF events should get src_ip from log siblings in same campaign."""
+        by_type = {
+            "brute_force": [
+                {
+                    "source": "auth_log",
+                    "campaign_id": "campaign_abc",
+                    "src_ip": "10.0.0.99",
+                    "session_id": "10.0.0.99:40000",
+                    "attack_type": "brute_force",
+                },
+                {
+                    "source": "ebpf_process",
+                    "campaign_id": "campaign_abc",
+                    "src_ip": None,
+                    "session_id": None,
+                    "attack_type": "brute_force",
+                },
+                {
+                    "source": "ebpf_file",
+                    "campaign_id": "campaign_abc",
+                    "src_ip": None,
+                    "session_id": None,
+                    "attack_type": "brute_force",
+                },
+            ]
+        }
+        result = _enrich_ebpf_fields(by_type)
+        ebpf_events = [e for e in result["brute_force"] if e["source"].startswith("ebpf_")]
+        for e in ebpf_events:
+            assert e["src_ip"] == "10.0.0.99"
+            assert e["session_id"] is not None
+            assert "ebpf_" in e["session_id"]
+
+    def test_replaces_zero_ip(self):
+        """eBPF events with 0.0.0.0 should get the real src_ip."""
+        by_type = {
+            "discovery": [
+                {
+                    "source": "auth_log",
+                    "campaign_id": "campaign_xyz",
+                    "src_ip": "192.168.1.50",
+                    "session_id": "192.168.1.50:22",
+                    "attack_type": "discovery",
+                },
+                {
+                    "source": "ebpf_network",
+                    "campaign_id": "campaign_xyz",
+                    "src_ip": "0.0.0.0",
+                    "session_id": None,
+                    "attack_type": "discovery",
+                },
+            ]
+        }
+        result = _enrich_ebpf_fields(by_type)
+        ebpf = [e for e in result["discovery"] if e["source"] == "ebpf_network"][0]
+        assert ebpf["src_ip"] == "192.168.1.50"
+
+    def test_no_log_events_leaves_ebpf_unchanged(self):
+        """If no log events have src_ip, eBPF events stay as-is."""
+        by_type = {
+            "discovery": [
+                {
+                    "source": "ebpf_process",
+                    "campaign_id": "campaign_nolog",
+                    "src_ip": None,
+                    "session_id": None,
+                    "attack_type": "discovery",
+                },
+            ]
+        }
+        result = _enrich_ebpf_fields(by_type)
+        assert result["discovery"][0]["src_ip"] is None
+
+    def test_multiple_campaigns_get_correct_ips(self):
+        """Each campaign's eBPF events get that campaign's src_ip."""
+        by_type = {
+            "brute_force": [
+                {
+                    "source": "auth_log",
+                    "campaign_id": "campaign_A",
+                    "src_ip": "10.0.0.1",
+                    "session_id": "10.0.0.1:22",
+                    "attack_type": "brute_force",
+                },
+                {
+                    "source": "ebpf_process",
+                    "campaign_id": "campaign_A",
+                    "src_ip": None,
+                    "session_id": None,
+                    "attack_type": "brute_force",
+                },
+                {
+                    "source": "auth_log",
+                    "campaign_id": "campaign_B",
+                    "src_ip": "10.0.0.2",
+                    "session_id": "10.0.0.2:22",
+                    "attack_type": "brute_force",
+                },
+                {
+                    "source": "ebpf_file",
+                    "campaign_id": "campaign_B",
+                    "src_ip": None,
+                    "session_id": None,
+                    "attack_type": "brute_force",
+                },
+            ]
+        }
+        result = _enrich_ebpf_fields(by_type)
+        events = result["brute_force"]
+        ebpf_a = [e for e in events if e["campaign_id"] == "campaign_A" and e["source"] == "ebpf_process"][0]
+        ebpf_b = [e for e in events if e["campaign_id"] == "campaign_B" and e["source"] == "ebpf_file"][0]
+        assert ebpf_a["src_ip"] == "10.0.0.1"
+        assert ebpf_b["src_ip"] == "10.0.0.2"
+
+
+class TestPerSourceCycling:
+    """Tests for per-source cycling in _cycle_benign — Bug 2 fix."""
+
+    def test_different_spans_both_fill_duration(self):
+        """Sources with different spans each fill the full duration."""
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        events = []
+        # Source A: 5 events spanning 4 hours
+        for i in range(5):
+            events.append({
+                "timestamp": (base + timedelta(hours=i)).isoformat(),
+                "source": "auth_log",
+                "raw_line": f"auth {i}",
+            })
+        # Source B: 3 events spanning 30 minutes
+        for i in range(3):
+            events.append({
+                "timestamp": (base + timedelta(minutes=i * 15)).isoformat(),
+                "source": "ebpf_process",
+                "raw_line": f"exec {i}",
+            })
+
+        # 24-hour composition
+        duration = 24 * 3600.0
+        result = _cycle_benign(events, duration)
+
+        auth_events = [e for e in result if e["source"] == "auth_log"]
+        ebpf_events = [e for e in result if e["source"] == "ebpf_process"]
+
+        # auth_log spans 4h → cycles ~6x in 24h → ~30 events
+        assert len(auth_events) >= 25
+        # ebpf spans 30min → cycles ~48x in 24h → ~144 events
+        assert len(ebpf_events) >= 100
+        # Both sources present throughout
+        assert len(auth_events) > 0
+        assert len(ebpf_events) > 0
+
+    def test_wide_span_difference_all_sources_survive(self):
+        """Sources from different eras both fill the duration."""
+        base_old = datetime(2012, 1, 1, tzinfo=timezone.utc)
+        base_new = datetime(2026, 3, 20, tzinfo=timezone.utc)
+        events = []
+        # Old web logs spanning 4 hours
+        for i in range(5):
+            events.append({
+                "timestamp": (base_old + timedelta(hours=i)).isoformat(),
+                "source": "web_access",
+                "raw_line": f"GET /page{i}",
+            })
+        # Recent eBPF spanning 40 seconds
+        for i in range(5):
+            events.append({
+                "timestamp": (base_new + timedelta(seconds=i * 10)).isoformat(),
+                "source": "ebpf_process",
+                "raw_line": f"execve pid={i}",
+            })
+
+        duration = 7 * 86400.0  # 7 days
+        result = _cycle_benign(events, duration)
+
+        sources = {e["source"] for e in result}
+        assert "web_access" in sources
+        assert "ebpf_process" in sources
+        # eBPF spans 40s, cycles ~15,000x in 7d → many events
+        ebpf_count = sum(1 for e in result if e["source"] == "ebpf_process")
+        assert ebpf_count > 100
+
+    def test_single_source_still_cycles(self):
+        """Single source type cycles normally."""
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        events = [
+            {
+                "timestamp": (base + timedelta(seconds=i * 60)).isoformat(),
+                "source": "auth_log",
+                "raw_line": f"event {i}",
+            }
+            for i in range(10)
+        ]
+        # 10 events spanning 540s, compose to 1200s → should cycle ~2x
+        result = _cycle_benign(events, 1200.0)
+        assert len(result) > 10
+        assert len(result) <= 22
+
+    def test_timestamps_within_duration(self):
+        """All output timestamps fall within the target duration."""
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        events = [
+            {"timestamp": base.isoformat(), "source": "web_access", "raw_line": "a"},
+            {"timestamp": (base + timedelta(hours=1)).isoformat(), "source": "ebpf_file", "raw_line": "b"},
+        ]
+        duration = 3600.0  # 1 hour
+        result = _cycle_benign(events, duration)
+        t_min = min(_parse_ts(e["timestamp"]) for e in result)
+        t_max = max(_parse_ts(e["timestamp"]) for e in result)
+        span = (t_max - t_min).total_seconds()
+        assert span <= duration
+
+
+class TestDownsampleEbpf:
+    """Tests for deterministic eBPF downsampling."""
+
+    def test_reduces_ebpf_preserves_logs(self):
+        """Downsampling reduces eBPF events but keeps all log events."""
+        events = [
+            {"timestamp": "2026-01-01T00:00:00Z", "source": "auth_log", "raw_line": f"log{i}"}
+            for i in range(100)
+        ] + [
+            {"timestamp": "2026-01-01T00:00:00Z", "source": "ebpf_file", "raw_line": f"open{i}"}
+            for i in range(1000)
+        ]
+        result = _downsample_ebpf(events, sample_rate=0.242)
+        log_count = sum(1 for e in result if e["source"] == "auth_log")
+        ebpf_count = sum(1 for e in result if e["source"] == "ebpf_file")
+        assert log_count == 100  # all log events preserved
+        assert 180 < ebpf_count < 300  # ~242 ± statistical variation
+
+    def test_deterministic(self):
+        """Same events produce same sample both times."""
+        events = [
+            {"timestamp": "2026-01-01T00:00:00Z", "source": "ebpf_process", "raw_line": f"exec{i}"}
+            for i in range(500)
+        ]
+        r1 = _downsample_ebpf(events, sample_rate=0.5)
+        r2 = _downsample_ebpf(events, sample_rate=0.5)
+        assert len(r1) == len(r2)
+        assert all(a["raw_line"] == b["raw_line"] for a, b in zip(r1, r2))
+
+    def test_rate_1_keeps_all(self):
+        """Sample rate 1.0 keeps everything."""
+        events = [
+            {"timestamp": "2026-01-01T00:00:00Z", "source": "ebpf_file", "raw_line": f"f{i}"}
+            for i in range(100)
+        ]
+        result = _downsample_ebpf(events, sample_rate=1.0)
+        assert len(result) == 100

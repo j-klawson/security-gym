@@ -13,6 +13,7 @@ stream:
 
   benign:
     db: ../data/benign_v4.db         # Personal server logs + eBPF baseline — cycled to fill duration
+    ebpf_sample_rate: 0.242          # 24.2% — simulates single busy server (~785K eBPF events/day)
 
   attacks:
     db: ../data/campaigns_v2.db      # Attack event templates from Isildur campaigns (with eBPF)
