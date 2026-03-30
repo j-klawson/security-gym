@@ -147,7 +147,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
   - hopper: 102,078 events (`data/ebpf_hopper.db`)
 - [x] Rename `build_benign_v3.py` → `build_benign.py` (version-agnostic), add `--base-db` mode
 - [x] Build benign_v4.db: 11,159,241 events (7.9M logs + 3.24M eBPF), all checks PASS
-- [x] Compose and validate all 4 v4 experiment streams
+- [x] Compose and validate all 4 v4 experiment streams (4.9M / 21.5M / 63.2M / 257.7M events)
 - [x] Update CLAUDE.md data versions with new eBPF event counts
 - [ ] Publish v4 dataset to Zenodo (new version of DOI 10.5281/zenodo.18901542): benign_v4.db.zst, campaigns_v2.db.zst, 4 v4 experiment streams, DATASET_README.md
 - [ ] Update CITATION.cff and CLAUDE.md with new Zenodo version DOI

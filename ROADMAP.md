@@ -185,7 +185,11 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
   - hopper: 102,078 events (`data/ebpf_hopper.db`) — lab/GPU server, quieter baseline
 - [x] Rename `build_benign_v3.py` → `build_benign.py`, add `--base-db` incremental mode, PII scrub on eBPF carryover, SHA256 hash in report
 - [x] Build benign_v4.db from v3 base + eBPF from 3 servers: 11,159,241 events (7.9M logs + 3.24M eBPF), 5.8 GB, all checks PASS
-- [x] Compose and validate v4 experiment streams (exp_7d_brute_v4.db, exp_30d_heavy_v4.db, exp01_90d_v4.db, exp_365d_realistic_v4.db)
+- [x] Compose and validate v4 experiment streams (with 24.2% eBPF downsampling):
+  - exp_7d_brute_v4.db: 4.9M events (4.87M benign, 26K malicious), 1.9GB
+  - exp_30d_heavy_v4.db: 21.5M events (20.9M benign, 610K malicious), 8.5GB
+  - exp01_90d_v4.db: 63.2M events (62.7M benign, 550K malicious), 25GB
+  - exp_365d_realistic_v4.db: 257.7M events (255.8M benign, 1.86M malicious), 101GB
 - [x] Update CLAUDE.md with new eBPF event counts
 - [ ] Publish v4 dataset to Zenodo (new version of DOI 10.5281/zenodo.18901542)
 
@@ -299,7 +303,7 @@ Convert the three eBPF text channels to fixed-width numeric arrays. No new kerne
 - [x] Read structured fields from existing `parsed` JSON column in EventStore — no schema changes needed
 - [ ] Benchmark: compare agent training on v1 (all text) vs v2 (hybrid) on same experiment stream
 
-**Data prerequisite:** Current experiment streams have very few benign eBPF events (only 997 from a 1-hour manual collection). The v2 structured channels will be sparse during benign periods, which could bias the agent to associate "eBPF activity = attack". Need extended benign eBPF collection before meaningful v1 vs v2 benchmarks — see Phase 9 backlog item.
+**Data prerequisite resolved:** v4 experiment streams include 3.24M benign eBPF events from 24-hour multi-server collections (Phase 9c). eBPF events now dominate event volume (~93% of all events), providing dense kernel telemetry during both benign and attack periods. v1 vs v2 benchmarks are now feasible.
 
 ### Phase 13b — eBPF LSM Hooks
 
