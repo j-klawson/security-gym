@@ -134,16 +134,16 @@ The `redis_lua_escape` module exploits a Debian-specific vulnerability where Red
 
 ## Baselines
 
-Baseline agents establish performance bounds for the environment. See `examples/` for runnable scripts.
+Baseline agents establish performance bounds for the environment. See `examples/` for runnable scripts. Results below are from `exp_30d_heavy_v4.db` (1M steps, all 5 attack types).
 
 | Agent | Description | Precision | Recall | F1 | Mean Reward |
 |-------|-------------|----------:|-------:|---:|------------:|
-| **pass-only** | Never acts — always passes | 0.000 | 0.000 | 0.000 | ~ -0.003 |
-| **random** | Uniform random action + risk score | ~ 0.005 | ~ 0.83 | ~ 0.01 | ~ -0.35 |
-| **threshold(5)** | Block IP after 5 failed SSH auths in 5 min | — | — | — | — |
+| **pass-only** | Never acts — always passes | 0.000 | 0.000 | 0.000 | -0.073 |
+| **random** | Uniform random action + risk score | 0.003 | 0.665 | 0.005 | -3.985 |
+| **threshold(5)** | Block IP after 5 failed SSH auths in 5 min | 1.000 | 0.005 | 0.011 | -0.084 |
 | **rlsecd** | 5-head MLP continual learner ([rlsecd](https://github.com/j-klawson/rlsecd)) | 0.979 | 0.979 | 0.979 | — |
 
-*Pass-only and random baselines are approximate — run `python examples/benchmark.py <db>` for exact numbers on your dataset. rlsecd results from 30-day v2 experiment stream (1.1M events).*
+The threshold agent achieves perfect precision but near-zero recall — it can only detect SSH brute force from auth\_log text, missing the 93% of events that are eBPF kernel telemetry. This demonstrates why learning across the full multi-channel observation space is necessary.
 
 ```bash
 # Run all baselines on an experiment stream

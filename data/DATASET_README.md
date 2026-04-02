@@ -88,6 +88,19 @@ for obs, info in stream:
     print(info["is_malicious"])  # ground truth
 ```
 
+## Baselines
+
+Evaluated on `exp_30d_heavy_v4.db` (1M steps, all 5 attack types):
+
+| Agent | Precision | Recall | F1 | Mean Reward |
+|-------|----------:|-------:|---:|------------:|
+| pass-only | 0.000 | 0.000 | 0.000 | -0.073 |
+| random | 0.003 | 0.665 | 0.005 | -3.985 |
+| threshold(5) | 1.000 | 0.005 | 0.011 | -0.084 |
+| rlsecd (MLP) | 0.979 | 0.979 | 0.979 | — |
+
+See `examples/` in the [source repository](https://github.com/j-klawson/security-gym) for runnable baseline agents.
+
 ## Data Provenance
 
 - **Benign traffic**: Collected from personal Linux servers running standard services (SSH, nginx, syslog). Hostnames, domains, and server IPs scrubbed to a single normalized target.

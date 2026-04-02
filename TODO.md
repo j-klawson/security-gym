@@ -64,7 +64,7 @@ Current action items for security-gym development.
 - [x] Create `examples/streaming_demo.py` — SecurityGymStream usage (batch, iter, gym modes)
 - [x] Create `examples/benchmark.py` — runs all baselines and prints comparison table
 - [x] Add baselines section to README with metrics table
-- [ ] Run benchmarks on v4 streams and fill in exact numbers in README
+- [x] Run benchmarks on v4 streams and fill in exact numbers in README (7d full + 30d 1M steps)
 
 ## Phase 6 — Experiments (Ready)
 
