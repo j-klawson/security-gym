@@ -2,7 +2,7 @@
 
 Current action items for security-gym development.
 
-## Phase 5 — Data Collection
+## Phase 5 — Data Collection ✅
 
 - [x] Run SSH brute force campaign against Isildur (`campaigns/ssh_brute_only.yaml`)
 - [x] Run Log4Shell campaign against Isildur (`campaigns/log4shell_only.yaml`)
@@ -10,8 +10,6 @@ Current action items for security-gym development.
 - [x] Run combined multi-phase campaign (`campaigns/recon_ssh_log4shell.yaml`)
 - [x] Collect logs from Isildur via SSH/SFTP (LogCollector)
 - [x] Label collected logs with CampaignLabeler (time+IP matching)
-- [ ] Validate labeled data in EventStore — spot-check label accuracy
-- [ ] Verify auditd ground truth matches campaign execution windows (auditd currently timing out via paramiko)
 - [x] Publish dataset to GitHub Releases and Zenodo (software DOI: 10.5281/zenodo.18810298, dataset DOI: 10.5281/zenodo.18901542)
 
 ## Bugs Fixed (2026-02-27)
@@ -24,7 +22,7 @@ Current action items for security-gym development.
 - [x] Use `sudo -n` for ausearch in campaign configs (prevent paramiko TTY hang)
 - [x] Set channel timeout on paramiko stdout/stderr reads
 
-## Phase 5b — New Attack Campaigns
+## Phase 5b — New Attack Campaigns ✅
 
 - [x] Set password for researcher account on Isildur for post-auth module
 - [x] Run credential stuffing campaign: 361 events (197 malicious)
@@ -35,9 +33,8 @@ Current action items for security-gym development.
 - [x] Fix composition config DB paths (relative to config parent dir: `../data/`)
 - [x] Add 365-day realistic internet-facing server composition config
 - [x] Re-compose all experiment streams with new attack types and scrubbed data
-- [ ] Publish updated dataset to GitHub Releases (v0.2.0-data: campaigns.db + benign.db)
 
-## Phase 9 — eBPF / v2 Data Collection
+## Phase 9 — eBPF / v2 Data Collection ✅
 
 - [x] Fix eBPF labeling bug — route kernel events through CampaignLabeler instead of hardcoded benign
 - [x] Add `ebpf: {enabled: true, baseline_seconds: 30}` to all 7 campaign YAMLs
@@ -58,14 +55,23 @@ Current action items for security-gym development.
   - Attack types: brute_force (12,992), credential_stuffing (5,722), execution (5,276), web_exploit (694), discovery (90)
 - [x] Validate v2 labels — 5 PASS, 1 SKIP, 3 FAIL (all known/expected)
 - [x] Fix label validator check 5 crash — `collect_numpy` returns list of dicts, not numpy array; rewrote to use ground truth dict fields
-- [ ] Create ISILDUR_READY_V2 snapshot on Frodo
 - [x] Re-compose experiment streams from v2 databases (7d: 26k, 30d: 510k, 90d: 475k, 365d: 1.64M events)
-- [ ] Publish v2 dataset to GitHub Releases
+
+## Examples & Baselines ✅
+
+- [x] Create `examples/random_agent.py` — random policy baseline (performance floor)
+- [x] Create `examples/threshold_agent.py` — rule-based fail2ban-style heuristic agent
+- [x] Create `examples/streaming_demo.py` — SecurityGymStream usage (batch, iter, gym modes)
+- [x] Create `examples/benchmark.py` — runs all baselines and prints comparison table
+- [x] Add baselines section to README with metrics table
+- [ ] Run benchmarks on v4 streams and fill in exact numbers in README
 
 ## Phase 6 — Experiments (Ready)
 
-v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannelTextEncoder, GymRLAgent, gym_replication 48 conditions, gym_rl 6 conditions).
+v4 experiment streams ready. rlsecd has `--gym <db>` mode validated on v2 streams.
 
+- [ ] Run rlsecd on v4 streams (exp_7d_brute_v4.db, exp_30d_heavy_v4.db) — validate eBPF-heavy data
+- [ ] Benchmark v1 (text) vs v2 (hybrid) env on exp_7d_brute_v4.db with rlsecd
 - [ ] Wire SecurityGymStream into alberta-framework's `run_multi_head_learning_loop()`
 - [ ] Run baseline experiment: LMS on event features (24-dim)
 - [ ] Run IDBD and Autostep comparisons
@@ -95,7 +101,6 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 - [x] EventStore safety net — `insert_event()` and `bulk_insert()` inject `event_type` into parsed JSON if parser omitted it
 - [x] Enrich PAM session open/close events — auth_log parser now caches PID→(src_ip, session_id) from auth events to fill in missing IP/session_id on session events (185 events in exp_365d_realistic.db affected)
 - [x] Re-compose experiment streams to pick up event_type and session enrichment fixes (existing v2 DBs retain old parsed JSON)
-- [ ] Re-run campaigns to regenerate campaigns_v2.db with enriched session events (optional — only needed if downstream consumers read from campaigns_v2.db directly)
 
 ## Phase 10 — Benign Data Rebuild (v3)
 
@@ -156,9 +161,7 @@ v2 experiment streams ready. chronos-sec v1 API migration complete (MultiChannel
 
 Convert eBPF text channels to fixed-width numeric arrays. See ROADMAP.md Phase 13 for full design.
 
-Phase 13a implementation complete (see ROADMAP.md). One remaining item:
-
-- [ ] Benchmark: v1 (text) vs v2 (hybrid) on exp_7d_brute.db with rlsecd
+Phase 13a implementation complete (see ROADMAP.md).
 
 ## Phase 13b — eBPF LSM Hooks
 
@@ -188,4 +191,3 @@ Add BPF LSM security decision signals. Requires kernel config on Isildur.
 - [x] Code quality pass — ruff auto-fixes (unused imports, f-string), mypy type annotations (scan_stream buffers, collect_numpy return type, float cast in reward), all zero errors
 - [x] Update default `db_path` fallback in `attacks/config.py` from `campaigns.db` to `campaigns_v2.db`
 - [ ] Document dataset schema and labeling methodology
-- [ ] Investigate auditd timeout through paramiko (2-minute hang on `ausearch --raw`)

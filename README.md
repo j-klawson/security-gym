@@ -61,7 +61,7 @@ Dict({
 Each structured channel is a ring buffer of `tail_events` rows (default 50). String fields (comm, IP, path) are hashed via mmh3 with per-field seeds. Timestamp deltas are log-scaled (`log(1 + dt)`) for gradient stability. Process events track tree depth from pid/ppid ancestry.
 
 ```python
-env = gym.make("SecurityLogStream-v2", db_path="data/campaigns.db", tail_events=50)
+env = gym.make("SecurityLogStream-v2", db_path="data/exp_7d_brute_v4.db", tail_events=50)
 obs, info = env.reset()
 print(obs["auth_log"][:100])            # str — raw log text
 print(obs["process_events"].shape)      # (50, 8) — float32 array
@@ -132,6 +132,29 @@ The `redis_lua_escape` module exploits a Debian-specific vulnerability where Red
 
 **Key eBPF detection signal:** `execve` events where `parent_comm=redis-server` — Redis spawning shell commands (`sh`, `bash`, `id`, `cat`) is highly anomalous. The eBPF collector captures `ppid` + `parent_comm` on every process event, so this parent-child relationship appears directly in the `process_events` text channel.
 
+## Baselines
+
+Baseline agents establish performance bounds for the environment. See `examples/` for runnable scripts.
+
+| Agent | Description | Precision | Recall | F1 | Mean Reward |
+|-------|-------------|----------:|-------:|---:|------------:|
+| **pass-only** | Never acts — always passes | 0.000 | 0.000 | 0.000 | ~ -0.003 |
+| **random** | Uniform random action + risk score | ~ 0.005 | ~ 0.83 | ~ 0.01 | ~ -0.35 |
+| **threshold(5)** | Block IP after 5 failed SSH auths in 5 min | — | — | — | — |
+| **rlsecd** | 5-head MLP continual learner ([rlsecd](https://github.com/j-klawson/rlsecd)) | 0.979 | 0.979 | 0.979 | — |
+
+*Pass-only and random baselines are approximate — run `python examples/benchmark.py <db>` for exact numbers on your dataset. rlsecd results from 30-day v2 experiment stream (1.1M events).*
+
+```bash
+# Run all baselines on an experiment stream
+python examples/benchmark.py data/exp_7d_brute_v4.db
+
+# Individual agents
+python examples/random_agent.py data/exp_7d_brute_v4.db
+python examples/threshold_agent.py data/exp_7d_brute_v4.db --threshold 5
+python examples/streaming_demo.py data/exp_7d_brute_v4.db --mode gym
+```
+
 ## Install
 
 ```bash
@@ -156,7 +179,9 @@ pip install -e ".[all]"       # Everything
 
 ## Dataset
 
-Pre-built datasets (SQLite databases with labeled log events) are available from [GitHub Releases](https://github.com/j-klawson/security-gym/releases) and archived on [Zenodo](https://doi.org/10.5281/zenodo.18901542).
+Pre-built datasets (SQLite databases with labeled log and eBPF kernel events) are available from [Zenodo](https://doi.org/10.5281/zenodo.18901542) and [GitHub Releases](https://github.com/j-klawson/security-gym/releases).
+
+The v4 dataset includes 11.2M benign events (7.9M logs + 3.24M eBPF from 3 servers) and 60K attack events across 9 campaign types. Pre-composed experiment streams range from 4.9M events (7-day) to 257.7M events (365-day).
 
 Download the latest dataset:
 
@@ -168,7 +193,7 @@ security-gym download
 security-gym list
 ```
 
-Or manually download `campaigns.db` from the [Releases page](https://github.com/j-klawson/security-gym/releases) and place it in `data/`.
+Or download from [Zenodo](https://doi.org/10.5281/zenodo.18901542) and decompress with `zstd -d <file>.zst` into `data/`.
 
 ## Quick Start
 
@@ -179,7 +204,7 @@ import gymnasium as gym
 import numpy as np
 import security_gym
 
-env = gym.make("SecurityLogStream-v1", db_path="data/campaigns.db")
+env = gym.make("SecurityLogStream-v1", db_path="data/exp_7d_brute_v4.db")
 obs, info = env.reset()
 
 # obs is a dict of text channels + system stats
@@ -232,7 +257,7 @@ After blocking an IP, future events from that IP are silently dropped. The agent
 ### ANSI Rendering
 
 ```python
-env = gym.make("SecurityLogStream-v1", db_path="data/campaigns.db", render_mode="ansi")
+env = gym.make("SecurityLogStream-v1", db_path="data/exp_7d_brute_v4.db", render_mode="ansi")
 obs, info = env.reset()
 for _ in range(20):
     action = {"action": 0, "risk_score": np.array([0.0], dtype=np.float32)}
@@ -247,7 +272,7 @@ For direct integration with learning frameworks (bypasses Gymnasium overhead):
 ```python
 from security_gym.adapters.scan_stream import SecurityGymStream
 
-stream = SecurityGymStream("data/campaigns.db")
+stream = SecurityGymStream("data/exp_7d_brute_v4.db")
 
 # Batch: load all observations and ground truth
 observations, ground_truths = stream.collect_numpy()
@@ -260,7 +285,7 @@ for obs_batch, gt_batch in stream.iter_batches(size=1000):
         print(obs["auth_log"][:80], gt["is_malicious"])
 
 # Server-speed evaluation mode (never-ending, paced stream)
-stream = SecurityGymStream("data/campaigns.db", speed=10.0, loop=True)
+stream = SecurityGymStream("data/exp_7d_brute_v4.db", speed=10.0, loop=True)
 for timestep in stream:  # Requires JAX
     ...
 ```
@@ -376,9 +401,10 @@ stream:
   duration: 90d
   seed: 42
   benign:
-    db: data/benign.db
+    db: data/benign_v4.db
+    ebpf_sample_rate: 0.242    # 24.2% — simulates single busy server
   attacks:
-    db: data/campaigns.db
+    db: data/campaigns_v2.db
     campaigns_per_day: 3.0
     distribution:
       discovery: 0.35
@@ -387,7 +413,7 @@ stream:
       credential_stuffing: 0.10
       execution: 0.05
   output:
-    db: data/exp01_90d.db
+    db: data/exp01_90d_v4.db
 ```
 
 ## Project Structure
@@ -397,10 +423,11 @@ security-gym/
 ├── src/security_gym/          # Installable package
 │   ├── adapters/              # SecurityGymStream (batch/streaming adapter)
 │   ├── data/                  # EventStore (SQLite), StreamComposer
-│   ├── envs/                  # SecurityLogStreamEnv (v1), deprecated wrappers
+│   ├── envs/                  # SecurityLogStreamEnv (v1, v2), deprecated wrappers
 │   ├── features/              # Deprecated (v0 numeric extractors)
 │   ├── parsers/               # auth_log, syslog, web_access, web_error, journal, ebpf
 │   └── targets/               # Deprecated (v0 multi-head target builder)
+├── examples/                  # Baseline agents and usage demos
 ├── attacks/                   # Attack framework (NOT pip-installed)
 │   ├── modules/               # recon, ssh_brute_force, credential_stuffing, ssh_post_auth, log4shell, redis_lua_escape
 │   ├── collection/            # SSH/SFTP log collector, benign log importer, eBPF orchestrator
@@ -416,8 +443,8 @@ security-gym/
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/                     # Core tests (227 tests)
-pytest attacks/tests/             # Attack framework tests (90 tests)
+pytest tests/                     # Core tests (339 tests)
+pytest attacks/tests/             # Attack framework tests (120 tests)
 ruff check src/ tests/ attacks/   # Lint
 ```
 
