@@ -23,10 +23,10 @@ Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poiss
 
 | File | Compressed | Decompressed | Events | Malicious | Campaigns | Duration |
 |------|-----------|-------------|--------|-----------|-----------|----------|
-| `exp_7d_brute_v4.db.zst` | 8.5 MB | 1.9 GB | 4,900,000 | 26,000 | SSH brute force only | 7 days |
-| `exp_30d_heavy_v4.db.zst` | 64 MB | 8.5 GB | 21,500,000 | 610,000 | Mixed, heavy attack rate | 30 days |
-| `exp01_90d_v4.db.zst` | 116 MB | 25 GB | 63,200,000 | 550,000 | Mixed, moderate rate | 90 days |
-| `exp_365d_realistic_v4.db.zst` | — | 101 GB | 257,700,000 | 1,860,000 | Mixed, realistic rate | 365 days |
+| `exp_7d_brute_v4.db.zst` | 8.5 MB | 1.9 GB | 4,891,541 | 25,980 | SSH brute force only | 7 days |
+| `exp_30d_heavy_v4.db.zst` | 64 MB | 8.5 GB | 21,511,208 | 609,520 | Mixed, heavy attack rate | 30 days |
+| `exp01_90d_v4.db.zst` | 116 MB | 25 GB | 63,212,997 | 549,787 | Mixed, moderate rate | 90 days |
+| `exp_365d_realistic_v4.db.zst` | — | 101 GB | 257,654,256 | 1,857,178 | Mixed, realistic rate | 365 days |
 
 ## Attack Types
 
@@ -76,9 +76,11 @@ CREATE TABLE events (
 
 ## Quick Start
 
-```python
+```bash
 pip install security-gym
+```
 
+```python
 from security_gym import SecurityGymStream
 
 # Stream events from a dataset
@@ -114,7 +116,7 @@ See `examples/` in the [source repository](https://github.com/j-klawson/security
 @software{lawson_security_gym_2026,
   author    = {Lawson, Keith},
   title     = {Security-Gym: Gymnasium Environments for Cybersecurity Threat Detection with Continual Learning},
-  version   = {0.3.10},
+  version   = {0.3.11},
   year      = {2026},
   doi       = {10.5281/zenodo.18901542},
   url       = {https://doi.org/10.5281/zenodo.18901542},

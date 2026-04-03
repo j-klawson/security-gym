@@ -33,9 +33,9 @@ Dict({
     "auth_log":         Text    # SSH auth events (tail of /var/log/auth.log)
     "syslog":           Text    # System events (tail of /var/log/syslog)
     "web_log":          Text    # Combined web access/error logs
-    "process_events":   Text    # eBPF: execve/exit/fork kernel events
-    "network_events":   Text    # eBPF: connect/accept/bind socket events
-    "file_events":      Text    # eBPF: open/write/unlink file events
+    "process_events":   Text    # eBPF: execve/exit kernel events
+    "network_events":   Text    # eBPF: connect/accept socket events
+    "file_events":      Text    # eBPF: open/unlink file events
     "system_stats":     Box(3)  # [load_avg, mem_used_frac, disk_used_frac]
 })
 ```
@@ -104,7 +104,7 @@ Three components combined:
 
 **Risk score MSE**: `-0.1 * (predicted_risk - true_risk)^2` — penalizes inaccurate threat assessment.
 
-**Ongoing consequences**: blocked/throttled events accumulate reward between steps (+0.05 per blocked attack event, -0.1 per blocked benign event). The agent feels the sustained cost of false positives.
+**Ongoing consequences**: blocked/throttled events accumulate reward between steps (+0.1 per blocked attack event, -0.5 per blocked benign event). The agent feels the sustained cost of false positives.
 
 ## Supported Attacks
 
@@ -183,7 +183,7 @@ pip install -e ".[all]"       # Everything
 
 Pre-built datasets (SQLite databases with labeled log and eBPF kernel events) are available from [Zenodo](https://doi.org/10.5281/zenodo.18901542) and [GitHub Releases](https://github.com/j-klawson/security-gym/releases).
 
-The v4 dataset includes 11.2M benign events (7.9M logs + 3.24M eBPF from 3 servers) and 60K attack events across 9 campaign types. Pre-composed experiment streams range from 4.9M events (7-day) to 257.7M events (365-day).
+The v4 dataset includes 11.2M benign events (7.9M logs + 3.24M eBPF from 3 servers) and 60K attack events across 5 attack types. Pre-composed experiment streams range from 4.9M events (7-day) to 257.7M events (365-day).
 
 Download the latest dataset:
 
@@ -253,8 +253,8 @@ isolate = {"action": 5, "risk_score": np.array([10.0], dtype=np.float32)}
 ```
 
 After blocking an IP, future events from that IP are silently dropped. The agent observes the absence of those events and receives ongoing consequence feedback:
-- Dropped attack events: +0.05 per event (confirmed mitigation)
-- Dropped benign events: -0.1 per event (service impact)
+- Dropped attack events: +0.1 per event (confirmed mitigation)
+- Dropped benign events: -0.5 per event (service impact)
 
 ### ANSI Rendering
 
@@ -378,7 +378,7 @@ python scripts/collect_ebpf_baseline.py --duration 3600
 python scripts/collect_ebpf_baseline.py --duration 3600 --dry-run
 ```
 
-This copies the existing benign log database to a v2 database, then SSHs into the target, deploys the eBPF collector, runs for the specified duration, retrieves the events, and inserts them as benign (`is_malicious=0`). The resulting `benign_v2.db` contains both traditional log events and kernel-level events.
+This SSHs into the target, deploys the eBPF collector, runs for the specified duration, retrieves the events, and inserts them as benign (`is_malicious=0`). The v4 benign dataset includes 3.24M eBPF events from 24-hour collections on 3 servers.
 
 **During attack campaigns:**
 
