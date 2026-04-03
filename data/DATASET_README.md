@@ -97,6 +97,7 @@ Evaluated on `exp_30d_heavy_v4.db` (1M steps, all 5 attack types):
 | pass-only | 0.000 | 0.000 | 0.000 | -0.073 |
 | random | 0.003 | 0.665 | 0.005 | -3.985 |
 | threshold(5) | 1.000 | 0.005 | 0.011 | -0.084 |
+| keyword | 0.987 | 0.013 | 0.025 | -0.073 |
 | rlsecd (MLP) | 0.979 | 0.979 | 0.979 | — |
 
 See `examples/` in the [source repository](https://github.com/j-klawson/security-gym) for runnable baseline agents.

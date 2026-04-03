@@ -141,9 +141,10 @@ Baseline agents establish performance bounds for the environment. See `examples/
 | **pass-only** | Never acts — always passes | 0.000 | 0.000 | 0.000 | -0.073 |
 | **random** | Uniform random action + risk score | 0.003 | 0.665 | 0.005 | -3.985 |
 | **threshold(5)** | Block IP after 5 failed SSH auths in 5 min | 1.000 | 0.005 | 0.011 | -0.084 |
+| **keyword** | Multi-channel SIEM-style pattern matching | 0.987 | 0.013 | 0.025 | -0.073 |
 | **rlsecd** | 5-head MLP continual learner ([rlsecd](https://github.com/j-klawson/rlsecd)) | 0.979 | 0.979 | 0.979 | — |
 
-The threshold agent achieves perfect precision but near-zero recall — it can only detect SSH brute force from auth\_log text, missing the 93% of events that are eBPF kernel telemetry. This demonstrates why learning across the full multi-channel observation space is necessary.
+Both heuristic agents achieve high precision but near-zero recall. The threshold agent only sees SSH brute force in auth\_log text. The keyword agent adds rules for Log4Shell, process ancestry, and file access across all channels, doubling F1 — but still catches only 1.3% of attacks because most malicious events are eBPF kernel telemetry (file opens, process exits, network accepts) that don't match static signatures. Only a learning agent can generalize across the full observation space.
 
 ```bash
 # Run all baselines on an experiment stream
@@ -152,6 +153,7 @@ python examples/benchmark.py data/exp_7d_brute_v4.db
 # Individual agents
 python examples/random_agent.py data/exp_7d_brute_v4.db
 python examples/threshold_agent.py data/exp_7d_brute_v4.db --threshold 5
+python examples/keyword_agent.py data/exp_7d_brute_v4.db
 python examples/streaming_demo.py data/exp_7d_brute_v4.db --mode gym
 ```
 

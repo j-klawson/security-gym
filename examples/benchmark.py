@@ -19,6 +19,7 @@ import numpy as np
 
 import security_gym  # noqa: F401
 
+from keyword_agent import run as run_keyword
 from random_agent import run as run_random
 from threshold_agent import run as run_threshold
 
@@ -104,12 +105,17 @@ def main() -> None:
     results.append(r)
     print(f"  done ({r['elapsed_s']:.1f}s)")
 
-    # --- Threshold agents (vary threshold) ---
-    for threshold in (3, 5, 10):
-        print(f"Running threshold agent (t={threshold}) ...")
-        r = run_threshold(args.db_path, threshold, 300.0, args.max_steps, args.seed)
-        results.append(r)
-        print(f"  done ({r['elapsed_s']:.1f}s)")
+    # --- Threshold agent ---
+    print("Running threshold agent (t=5) ...")
+    r = run_threshold(args.db_path, 5, 300.0, args.max_steps, args.seed)
+    results.append(r)
+    print(f"  done ({r['elapsed_s']:.1f}s)")
+
+    # --- Keyword heuristic agent ---
+    print("Running keyword heuristic agent ...")
+    r = run_keyword(args.db_path, max_steps=args.max_steps, seed=args.seed)
+    results.append(r)
+    print(f"  done ({r['elapsed_s']:.1f}s)")
 
     # --- Print results ---
     print(f"\n{'Baseline Results':=^60}\n")
