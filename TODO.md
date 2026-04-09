@@ -68,9 +68,9 @@ Current action items for security-gym development.
 
 ## Phase 6 — Experiments (Ready)
 
-v4 experiment streams ready. rlsecd has `--gym <db>` mode validated on v2 streams.
+v4 experiment streams validated with rlsecd. eBPF features cut is_malicious MAE by 60% (Exp 13: 30 seeds, 90d v4, Cohen's d=2.577).
 
-- [ ] Run rlsecd on v4 streams (exp_7d_brute_v4.db, exp_30d_heavy_v4.db) — validate eBPF-heavy data
+- [x] Run rlsecd on v4 streams — Exp 8 (7d), Exp 12 (365d stability), Exp 13 (90d eBPF ablation, 63.2M events)
 - [ ] Benchmark v1 (text) vs v2 (hybrid) env on exp_7d_brute_v4.db with rlsecd
 - [ ] Wire SecurityGymStream into alberta-framework's `run_multi_head_learning_loop()`
 - [ ] Run baseline experiment: LMS on event features (24-dim)
