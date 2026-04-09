@@ -113,13 +113,25 @@ See `examples/` in the [source repository](https://github.com/j-klawson/security
 ## Citation
 
 ```bibtex
+@dataset{lawson_security_gym_dataset_2026,
+  author    = {Lawson, Keith},
+  title     = {Security-Gym Dataset: Labeled Linux Log and eBPF
+               Streams for Continual Learning Research},
+  version   = {4.0},
+  year      = {2026},
+  doi       = {10.5281/zenodo.19482383},
+  url       = {https://doi.org/10.5281/zenodo.19482383},
+  license   = {Apache-2.0}
+}
+
 @software{lawson_security_gym_2026,
   author    = {Lawson, Keith},
-  title     = {Security-Gym: Gymnasium Environments for Cybersecurity Threat Detection with Continual Learning},
-  version   = {0.3.11},
+  title     = {Security-Gym: Gymnasium Environments for Cybersecurity
+               Threat Detection with Continual Learning},
+  version   = {0.3.12},
   year      = {2026},
-  doi       = {10.5281/zenodo.18901542},
-  url       = {https://doi.org/10.5281/zenodo.18901542},
+  doi       = {10.5281/zenodo.18810298},
+  url       = {https://github.com/j-klawson/security-gym},
   license   = {Apache-2.0}
 }
 ```
