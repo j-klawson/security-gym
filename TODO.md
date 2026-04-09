@@ -189,4 +189,4 @@ Add BPF LSM security decision signals. Requires kernel config on Isildur.
 - [x] Zenodo DOI badge and archive
 - [x] Code quality pass — ruff auto-fixes (unused imports, f-string), mypy type annotations (scan_stream buffers, collect_numpy return type, float cast in reward), all zero errors
 - [x] Update default `db_path` fallback in `attacks/config.py` from `campaigns.db` to `campaigns_v2.db`
-- [ ] Document dataset schema and labeling methodology
+- [x] Document dataset schema and labeling methodology (DATASET_README.md)

@@ -104,11 +104,60 @@ Evaluated on `exp_30d_heavy_v4.db` (1M steps, all 5 attack types):
 
 See `examples/` in the [source repository](https://github.com/j-klawson/security-gym) for runnable baseline agents.
 
+## Labeling Methodology
+
+### Attack labeling (campaigns_v2.db)
+
+Each attack campaign is executed against the target VM by the campaign orchestrator, which records the start time, end time, and source IPs for every attack phase. The `CampaignLabeler` then labels collected events using **time-window + source-IP matching**:
+
+1. An event is labeled **malicious** if its timestamp falls within a phase's time window AND its `src_ip` matches one of that phase's attacker IPs.
+2. Events with no `src_ip` (e.g., syslog daemon messages during an attack window) match on time window alone.
+3. eBPF kernel events use the identical labeler — there is no separate labeling path for kernel telemetry.
+
+Malicious events receive five ground truth fields: `is_malicious=1`, `campaign_id`, `attack_type`, `attack_stage`, and `severity` (1-5). Benign events have `is_malicious=0` with the remaining fields NULL.
+
+### Benign data filtering (benign_v4.db)
+
+Real server logs are filtered to remove attack traffic before inclusion as benign data. The `MaliciousFilter` applies:
+
+- **Web rules** (auth.log, web_access, web_error): path traversal, SQL injection, XSS, JNDI injection, shell access, RFI, known exploit paths, scanner user-agents, suspicious HTTP methods
+- **Auth rules** (auth_log): failed passwords, invalid users, authentication failures, preauth disconnects, max auth attempts exceeded
+- **IP tracking**: source IPs from filtered events are accumulated and used to filter eBPF network events from the same IPs during eBPF carryover
+
+Syslog and eBPF process/file events pass through unfiltered — they contain no attacker-identifiable content in benign baseline collections.
+
+### PII scrubbing
+
+All benign data is scrubbed before release: server hostnames, domain names, and IP addresses are normalized to a single target host (`isildur` / `192.168.2.201`) so all benign and attack data appears to originate from one server. Scrubbing is case-insensitive and applied across all event sources.
+
+### Validation
+
+The `validate_labels.py` script runs 9 automated checks:
+
+| # | Check | Description |
+|---|-------|-------------|
+| 1 | Label consistency | `is_malicious=1` requires non-NULL attack_type/stage/severity; `is_malicious=0` requires NULL |
+| 2 | Raw line spot-checks | Regex patterns per attack_type against sampled malicious events |
+| 3 | Campaign boundaries | All malicious events fall within their campaign's start/end times |
+| 4 | Campaign type cross-validation | Event attack_type matches campaign's declared type |
+| 5 | Target array consistency | SecurityGymStream round-trip: NaN masking, array shape |
+| 6 | Attack type distribution | Actual proportions vs composition config weights (WARN-only) |
+| 7 | Temporal order | Events sorted by timestamp (monotonically non-decreasing by id) |
+| 8 | No unlabeled events | `is_malicious` is never NULL |
+| 9 | Session coherence | All events in a session share the same `is_malicious` label |
+
+### Known data quality
+
+- **campaigns_v2.db**: 24 temporal order violations (multi-server import boundary) and 3 mixed-label sessions (labeler edge cases at phase boundaries). These are in the source campaigns only — composed experiment streams are clean because StreamComposer re-sorts by timestamp.
+- **benign_v3.db / benign_v4.db**: Zero temporal order violations (build script sorts after multi-server merge).
+- **Check 2 limitation**: Raw line spot-checks cannot pattern-match eBPF kernel event lines (file opens, process exits). These events are correctly labeled by time+IP matching but fail the regex-based spot-check.
+
 ## Data Provenance
 
-- **Benign traffic**: Collected from personal Linux servers running standard services (SSH, nginx, syslog). Hostnames, domains, and server IPs scrubbed to a single normalized target.
-- **Attack traffic**: Scripted campaigns executed against a purpose-built Debian 11 VM with intentionally vulnerable services (OpenSSH, Log4Shell via Docker, Redis CVE-2022-0543). Each campaign is labeled via time-window + source-IP matching.
-- **eBPF events**: Collected via BCC tracepoints (execve, connect, accept, openat, unlinkat). Benign baseline from 24-hour collections on 3 Debian 13 servers (3.24M events). Attack eBPF from the target VM during campaign execution.
+- **Benign traffic**: Collected from 4 personal Linux servers (can, dallas, isildur, sak) running standard services (SSH, nginx, syslog). 7,915,858 log events. Hostnames, domains, and server IPs scrubbed to a single normalized target.
+- **Benign eBPF**: 24-hour baseline collections from 3 Debian 13 servers (frodo: 2,355,832 events; 9600baud: 785,473; hopper: 102,078). 3,243,383 total kernel events.
+- **Attack traffic**: 10 scripted campaigns executed against a purpose-built Debian 11 VM (Isildur) with intentionally vulnerable services (OpenSSH, Log4Shell via Docker, Redis CVE-2022-0543). 60,468 events (30,436 malicious) labeled via time-window + source-IP matching.
+- **eBPF kernel events**: Collected via BCC tracepoints (`sys_enter_execve`, `sched_process_exit`, `sys_enter_connect`, `sys_enter_accept4`, `sys_enter_openat`, `sys_enter_unlinkat`) on the target VM during both benign baseline collection and attack campaigns.
 
 ## Citation
 
