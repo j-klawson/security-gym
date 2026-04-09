@@ -154,8 +154,7 @@ v4 experiment streams validated with rlsecd. eBPF features cut is_malicious MAE 
 - [x] Build benign_v4.db: 11,159,241 events (7.9M logs + 3.24M eBPF), all checks PASS
 - [x] Compose and validate all 4 v4 experiment streams (4.9M / 21.5M / 63.2M / 257.7M events)
 - [x] Update CLAUDE.md data versions with new eBPF event counts
-- [ ] Publish v4 dataset to Zenodo (new version of DOI 10.5281/zenodo.18901542): benign_v4.db.zst, campaigns_v2.db.zst, 4 v4 experiment streams, DATASET_README.md
-- [ ] Update CITATION.cff and CLAUDE.md with new Zenodo version DOI
+- [x] Publish v4 dataset to Zenodo (DOI: 10.5281/zenodo.19482383): benign_v4.db.zst, campaigns_v2.db.zst, 4 v4 experiment streams, DATASET_README.md
 
 ## Phase 13a — Structured eBPF Observation Channels
 
