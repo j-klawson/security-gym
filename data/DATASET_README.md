@@ -161,6 +161,8 @@ The `validate_labels.py` script runs 9 automated checks:
 
 ## Citation
 
+The dataset has a Zenodo **concept DOI** ([10.5281/zenodo.18901627](https://doi.org/10.5281/zenodo.18901627)) that always resolves to the latest version, and per-version DOIs for reproducibility (v3: [10.5281/zenodo.18901542](https://doi.org/10.5281/zenodo.18901542); v4: [10.5281/zenodo.19482383](https://doi.org/10.5281/zenodo.19482383)). Cite the version-specific DOI in papers.
+
 ```bibtex
 @dataset{lawson_security_gym_dataset_2026,
   author    = {Lawson, Keith},

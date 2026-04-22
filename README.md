@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Gymnasium](https://img.shields.io/badge/Gymnasium-%E2%89%A51.0.0-blue)](https://gymnasium.farama.org/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18810298.svg)](https://doi.org/10.5281/zenodo.18810298)
-[![Dataset DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18901542.svg)](https://doi.org/10.5281/zenodo.18901542)
+[![Dataset DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18901627.svg)](https://doi.org/10.5281/zenodo.18901627)
 
 Gymnasium-compatible environment for security defense research. The agent observes raw text streams — like `tail -N` on log files and kernel event channels — and takes defensive actions (block, throttle, alert, isolate) that causally affect future observations.
 
@@ -181,7 +181,7 @@ pip install -e ".[all]"       # Everything
 
 ## Dataset
 
-Pre-built datasets (SQLite databases with labeled log and eBPF kernel events) are available from [Zenodo](https://doi.org/10.5281/zenodo.18901542) and [GitHub Releases](https://github.com/j-klawson/security-gym/releases).
+Pre-built datasets (SQLite databases with labeled log and eBPF kernel events) are available from [Zenodo](https://doi.org/10.5281/zenodo.18901627) and [GitHub Releases](https://github.com/j-klawson/security-gym/releases).
 
 The v4 dataset includes 11.2M benign events (7.9M logs + 3.24M eBPF from 3 servers) and 60K attack events across 5 attack types. Pre-composed experiment streams range from 4.9M events (7-day) to 257.7M events (365-day).
 
@@ -195,7 +195,7 @@ security-gym download
 security-gym list
 ```
 
-Or download from [Zenodo](https://doi.org/10.5281/zenodo.18901542) and decompress with `zstd -d <file>.zst` into `data/`.
+Or download from [Zenodo](https://doi.org/10.5281/zenodo.18901627) and decompress with `zstd -d <file>.zst` into `data/`.
 
 ## Quick Start
 
