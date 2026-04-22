@@ -229,6 +229,11 @@ GitHub release and Zenodo archival of software and datasets.
 - [x] Update CITATION.cff, README.md, .zenodo.json, ROADMAP.md, TODO.md with new DOIs
 - [x] Tests: 233 passed, lint clean, no dependency vulnerabilities
 
+## Docs Correction (2026-04-22)
+
+- DOI audit: routed all generic "dataset" references in README.md, DATASET_README.md, and CLAUDE.md to the Zenodo **concept DOI** [10.5281/zenodo.18901627](https://doi.org/10.5281/zenodo.18901627) (always resolves to latest version). Version-specific DOIs (v3: 18901542, v4: 19482383) retained for reproducibility citations. Software DOI (18810298) unchanged.
+- Stream event-count sync: the security-gym paper draft (`research-assistant/mypapers/security-gym/drafts/v3.md` §5.2) carried stale/rounded per-stream totals that disagreed with DATASET_README.md. Queried the shipped v4 DBs directly to establish ground truth — DATASET_README is canonical. Updated the paper table to match (7d: 4,891,541 / 25,980; 30d: 21,511,208 / 609,520; 90d: 63,212,997 / 549,787; 365d: 257,654,256 / 1,857,178).
+
 ## Phase 11 — Report Action / SOC Escalation (Future)
 
 Add a `report` action (ACTION_REPORT = 6, expanding Discrete(6) → Discrete(7)) that simulates the agent escalating an event to a SOC analyst. Unlike `block`/`isolate` which are immediate and autonomous, `report` models the real-world path of filing an incident report and waiting for a human analyst to investigate and remediate.

@@ -190,3 +190,5 @@ Add BPF LSM security decision signals. Requires kernel config on Isildur.
 - [x] Code quality pass — ruff auto-fixes (unused imports, f-string), mypy type annotations (scan_stream buffers, collect_numpy return type, float cast in reward), all zero errors
 - [x] Update default `db_path` fallback in `attacks/config.py` from `campaigns.db` to `campaigns_v2.db`
 - [x] Document dataset schema and labeling methodology (DATASET_README.md)
+- [x] Docs sync (2026-04-22): route all generic dataset links to concept DOI 10.5281/zenodo.18901627 (README.md badges + Zenodo links, CLAUDE.md, DATASET_README.md citation); keep version-specific DOIs (v3 18901542, v4 19482383) for reproducibility citations
+- [x] Sync paper §5.2 event counts (2026-04-22): updated `research-assistant/mypapers/security-gym/drafts/v3.md` to match authoritative DB counts in DATASET_README.md (7d 4,891,541 / 25,980; 30d 21,511,208 / 609,520; 90d 63,212,997 / 549,787; 365d 257,654,256 / 1,857,178). DATASET_README confirmed canonical via direct sqlite COUNT on shipped v4 DBs.
