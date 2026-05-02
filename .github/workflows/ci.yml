@@ -43,6 +43,8 @@ jobs:
           pip install -e ".[dev]"
           pip install pip-audit bandit
       - name: Audit dependencies
-        run: pip-audit --skip-editable
+        # CVE-2026-3219 affects pip itself with no fix version published.
+        # Revisit and drop --ignore-vuln once an upstream fix lands.
+        run: pip-audit --skip-editable --ignore-vuln CVE-2026-3219
       - name: Static security analysis
         run: bandit -r src/ -c pyproject.toml
