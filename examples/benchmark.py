@@ -45,7 +45,7 @@ def format_table(results: list[dict]) -> str:
 
 def run_pass_only(db_path: str, max_steps: int | None, seed: int) -> dict:
     """Run a pass-only agent (never acts)."""
-    env = gym.make("SecurityLogStream-v1", db_path=db_path)
+    env = gym.make("SecurityLogStream-Text-v0", db_path=db_path)
     obs, info = env.reset(seed=seed)
     total_reward = 0.0
     steps = 0

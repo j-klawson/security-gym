@@ -337,12 +337,25 @@ class TestStreamBehavior:
 
 class TestGymnasiumRegistration:
     def test_gymnasium_make(self, tmp_db):
-        """Test that gymnasium.make works with registered v1 env."""
-        env = gym.make("SecurityLogStream-v1", db_path=tmp_db)
+        """gymnasium.make works with the Text-mode env."""
+        env = gym.make("SecurityLogStream-Text-v0", db_path=tmp_db)
         obs, info = env.reset()
         assert isinstance(obs, dict)
         assert "auth_log" in obs
         env.close()
+
+    def test_legacy_alias_warns(self, tmp_db):
+        """The deprecated v1 alias still resolves but emits a DeprecationWarning."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            env = gym.make("SecurityLogStream-v1", db_path=tmp_db)
+            env.reset()
+            env.close()
+
+        deprecations = [w for w in captured if issubclass(w.category, DeprecationWarning)]
+        assert any("SecurityLogStream-Text-v0" in str(w.message) for w in deprecations)
 
 
 class TestRewardConfig:

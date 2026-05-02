@@ -302,13 +302,13 @@ Convert the three eBPF text channels to fixed-width numeric arrays. No new kerne
 - [x] `StructuredRingBuffer` — circular numpy buffer with O(1) append and chronological snapshot (`envs/structured_buffer.py`)
 - [x] `ebpf_encoding.py` — mmh3 hashing with per-field seeds, syscall enum, flag bitmask, log-scaled deltas, per-channel row extraction
 - [x] `SecurityLogStreamEnvV2` — subclass with hybrid text + structured observation space, process tree depth tracking, per-channel timestamp deltas (`envs/log_stream_env_v2.py`)
-- [x] `SecurityLogStream-v2` registered alongside v1 (backwards compatible)
+- [x] Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs retained as deprecated aliases through 0.4.x (removal in 0.5.0).
 - [x] `SecurityGymStream` `structured=True` mode — same hybrid observation in batch/streaming adapter
-- [x] Tests: 288 passing (47 new: ring buffer, encoding, v2 env integration, adapter structured mode)
+- [x] Tests: 288 passing (47 new: ring buffer, encoding, hybrid env integration, adapter structured mode)
 - [x] Read structured fields from existing `parsed` JSON column in EventStore — no schema changes needed
-- [ ] Benchmark: compare agent training on v1 (all text) vs v2 (hybrid) on same experiment stream
+- [ ] Benchmark: compare agent training on Text mode vs Hybrid mode on same experiment stream
 
-**Data prerequisite resolved:** v4 experiment streams include 3.24M benign eBPF events from 24-hour multi-server collections (Phase 9c). eBPF events now dominate event volume (~93% of all events), providing dense kernel telemetry during both benign and attack periods. v1 vs v2 benchmarks are now feasible.
+**Data prerequisite resolved:** v4 experiment streams include 3.24M benign eBPF events from 24-hour multi-server collections (Phase 9c). eBPF events now dominate event volume (~93% of all events), providing dense kernel telemetry during both benign and attack periods. Text-vs-Hybrid mode benchmarks are now feasible.
 
 ### Phase 13b — eBPF LSM Hooks
 
@@ -373,7 +373,7 @@ BPF LSM programs can return `-EPERM` to deny operations. This creates a direct m
 
 2. **tail_events default**: Text channels use `tail_lines=500`. For structured channels, each "event" is a fixed-width row, so memory is predictable. Higher values (1000–2000) give the agent more temporal context without the truncation issues of text channels. Need to benchmark memory and training speed.
 
-3. **Backward compatibility**: Register as `SecurityLogStream-v2` (hybrid obs) alongside existing `SecurityLogStream-v1` (all text). The v1→v2 migration in rlsecd needs the adapter to support both. Consider a `structured_ebpf=True` flag on the v1 env as a transitional path.
+3. **Backward compatibility**: Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs are kept as deprecated aliases. The Text→Hybrid migration in rlsecd needs the adapter to support both.
 
 4. **LSM hook granularity**: P2 hooks (mount, inode_link, inode_rename) generate high event volume on normal systems. May need filtering (e.g., only log mount operations outside known mount points, only log inode operations on sensitive paths). This filtering logic lives in the BPF C program to avoid flooding the perf buffer.
 

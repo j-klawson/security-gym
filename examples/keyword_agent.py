@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-channel keyword heuristic agent for SecurityLogStream-v1.
+"""Multi-channel keyword heuristic agent for SecurityLogStream-Text-v0.
 
 A stronger rule-based agent that scans ALL text channels for suspicious
 patterns — not just auth_log. Represents what a well-tuned SIEM rule set
@@ -129,7 +129,7 @@ def run(
     seed: int = 42,
 ) -> dict:
     """Run the keyword heuristic agent and return metrics."""
-    env = gym.make("SecurityLogStream-v1", db_path=db_path)
+    env = gym.make("SecurityLogStream-Text-v0", db_path=db_path)
     obs, info = env.reset(seed=seed)
 
     total_reward = 0.0

@@ -19,7 +19,7 @@ All files are compressed with [Zstandard](https://facebook.github.io/zstd/). Dec
 
 ### Pre-Composed Experiment Streams
 
-Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poisson-scheduled attack insertion and 24.2% eBPF downsampling (simulates single busy server). Ready for direct use with `SecurityGymStream` or `SecurityLogStream-v1`. eBPF events dominate volume (~93% of events are ebpf_file/process/network).
+Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poisson-scheduled attack insertion and 24.2% eBPF downsampling (simulates single busy server). Ready for direct use with `SecurityGymStream` or either observation mode (`SecurityLogStream-Text-v0`, `SecurityLogStream-Hybrid-v0`). eBPF events dominate volume (~93% of events are ebpf_file/process/network).
 
 | File | Compressed | Decompressed | Events | Malicious | Campaigns | Duration |
 |------|-----------|-------------|--------|-----------|-----------|----------|

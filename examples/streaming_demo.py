@@ -72,7 +72,7 @@ def demo_gym(db_path: str, max_steps: int = 20) -> None:
     import security_gym  # noqa: F401
 
     print(f"Running Gymnasium env for {max_steps} steps ...")
-    env = gym.make("SecurityLogStream-v1", db_path=db_path, render_mode="ansi")
+    env = gym.make("SecurityLogStream-Text-v0", db_path=db_path, render_mode="ansi")
     obs, info = env.reset(seed=42)
 
     for step in range(max_steps):

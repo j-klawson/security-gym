@@ -138,14 +138,27 @@ class TestV1Unaffected:
 
 
 class TestGymnasiumMake:
-    def test_gymnasium_make_v2(self, tmp_db_with_ebpf):
+    def test_gymnasium_make_hybrid(self, tmp_db_with_ebpf):
         env = gym.make(
-            "SecurityLogStream-v2", db_path=str(tmp_db_with_ebpf),
+            "SecurityLogStream-Hybrid-v0", db_path=str(tmp_db_with_ebpf),
         )
         obs, info = env.reset()
         assert isinstance(obs["auth_log"], str)
         assert isinstance(obs["process_events"], np.ndarray)
         env.close()
+
+    def test_legacy_v2_alias_warns(self, tmp_db_with_ebpf):
+        """The deprecated v2 alias resolves to the hybrid env with a warning."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            env = gym.make("SecurityLogStream-v2", db_path=str(tmp_db_with_ebpf))
+            env.reset()
+            env.close()
+
+        deprecations = [w for w in captured if issubclass(w.category, DeprecationWarning)]
+        assert any("SecurityLogStream-Hybrid-v0" in str(w.message) for w in deprecations)
 
 
 class TestDefenseActionsInherited:

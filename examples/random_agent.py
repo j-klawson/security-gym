@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Random agent baseline for SecurityLogStream-v1.
+"""Random agent baseline for SecurityLogStream-Text-v0.
 
 Selects actions uniformly at random and predicts a random risk score.
 This establishes the performance floor — any useful agent should beat this.
@@ -22,7 +22,7 @@ import security_gym  # noqa: F401 — registers envs
 
 def run(db_path: str, max_steps: int | None = None, seed: int = 42) -> dict:
     """Run a random agent and return metrics."""
-    env = gym.make("SecurityLogStream-v1", db_path=db_path)
+    env = gym.make("SecurityLogStream-Text-v0", db_path=db_path)
     obs, info = env.reset(seed=seed)
     rng = np.random.default_rng(seed)
 

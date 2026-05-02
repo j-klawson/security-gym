@@ -24,9 +24,9 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 
 ## Observation Space
 
-### V1 — All Text (`SecurityLogStream-v1`)
+### Text Mode (`SecurityLogStream-Text-v0`)
 
-The agent sees the same data a security analyst would — raw log files and kernel event streams:
+The agent sees the same data a security analyst would, raw log files and kernel event streams:
 
 ```
 Dict({
@@ -42,7 +42,7 @@ Dict({
 
 Each text channel is a ring buffer of recent lines (configurable `tail_lines` and `max_chars`), updated on every step.
 
-### V2 — Hybrid Text + Structured (`SecurityLogStream-v2`)
+### Hybrid Mode (`SecurityLogStream-Hybrid-v0`)
 
 Log channels remain as text; eBPF kernel events become fixed-width float32 arrays:
 
@@ -61,7 +61,7 @@ Dict({
 Each structured channel is a ring buffer of `tail_events` rows (default 50). String fields (comm, IP, path) are hashed via mmh3 with per-field seeds. Timestamp deltas are log-scaled (`log(1 + dt)`) for gradient stability. Process events track tree depth from pid/ppid ancestry.
 
 ```python
-env = gym.make("SecurityLogStream-v2", db_path="data/exp_7d_brute_v4.db", tail_events=50)
+env = gym.make("SecurityLogStream-Hybrid-v0", db_path="data/exp_7d_brute_v4.db", tail_events=50)
 obs, info = env.reset()
 print(obs["auth_log"][:100])            # str — raw log text
 print(obs["process_events"].shape)      # (50, 8) — float32 array
@@ -206,7 +206,7 @@ import gymnasium as gym
 import numpy as np
 import security_gym
 
-env = gym.make("SecurityLogStream-v1", db_path="data/exp_7d_brute_v4.db")
+env = gym.make("SecurityLogStream-Text-v0", db_path="data/exp_7d_brute_v4.db")
 obs, info = env.reset()
 
 # obs is a dict of text channels + system stats
@@ -259,7 +259,7 @@ After blocking an IP, future events from that IP are silently dropped. The agent
 ### ANSI Rendering
 
 ```python
-env = gym.make("SecurityLogStream-v1", db_path="data/exp_7d_brute_v4.db", render_mode="ansi")
+env = gym.make("SecurityLogStream-Text-v0", db_path="data/exp_7d_brute_v4.db", render_mode="ansi")
 obs, info = env.reset()
 for _ in range(20):
     action = {"action": 0, "risk_score": np.array([0.0], dtype=np.float32)}

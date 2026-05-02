@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Threshold heuristic agent for SecurityLogStream-v1.
+"""Threshold heuristic agent for SecurityLogStream-Text-v0.
 
 A rule-based agent that parses auth_log text to detect SSH brute force
 patterns and blocks source IPs after repeated failures. Represents what
@@ -66,7 +66,7 @@ def run(
     seed: int = 42,
 ) -> dict:
     """Run the threshold agent and return metrics."""
-    env = gym.make("SecurityLogStream-v1", db_path=db_path)
+    env = gym.make("SecurityLogStream-Text-v0", db_path=db_path)
     obs, info = env.reset(seed=seed)
 
     # Per-IP failure timestamps (for windowed counting)
