@@ -1,7 +1,7 @@
-"""V2 log stream environment with structured eBPF observation channels.
+"""Hybrid-mode log stream environment with structured eBPF observation channels.
 
 Text channels for human-readable logs; fixed-width float32 arrays for
-kernel events. Subclasses SecurityLogStreamEnv — all defense logic,
+kernel events. Subclasses SecurityLogStreamEnv: all defense logic,
 reward computation, and ground truth are inherited.
 """
 
@@ -46,8 +46,8 @@ _EBPF_SOURCE_MAP = {
 DEFAULT_TAIL_EVENTS = 50
 
 
-class SecurityLogStreamEnvV2(SecurityLogStreamEnv):
-    """V2 environment with hybrid text + structured observations.
+class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
+    """Hybrid-mode environment with text log channels and structured eBPF channels.
 
     Log channels (auth_log, syslog, web_log) remain as Text spaces.
     eBPF channels (process_events, network_events, file_events) become

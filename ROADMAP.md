@@ -301,7 +301,7 @@ Convert the three eBPF text channels to fixed-width numeric arrays. No new kerne
 
 - [x] `StructuredRingBuffer` — circular numpy buffer with O(1) append and chronological snapshot (`envs/structured_buffer.py`)
 - [x] `ebpf_encoding.py` — mmh3 hashing with per-field seeds, syscall enum, flag bitmask, log-scaled deltas, per-channel row extraction
-- [x] `SecurityLogStreamEnvV2` — subclass with hybrid text + structured observation space, process tree depth tracking, per-channel timestamp deltas (`envs/log_stream_env_v2.py`)
+- [x] `SecurityLogStreamHybridEnv` — subclass with hybrid text + structured observation space, process tree depth tracking, per-channel timestamp deltas (`envs/log_stream_env_hybrid.py`)
 - [x] Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs retained as deprecated aliases through 0.4.x (removal in 0.5.0).
 - [x] `SecurityGymStream` `structured=True` mode — same hybrid observation in batch/streaming adapter
 - [x] Tests: 288 passing (47 new: ring buffer, encoding, hybrid env integration, adapter structured mode)

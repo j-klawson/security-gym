@@ -32,7 +32,7 @@ from security_gym.envs.log_stream_env import (
     DEFAULT_MAX_CHARS,
     DEFAULT_TAIL_LINES,
 )
-from security_gym.envs.log_stream_env_v2 import (
+from security_gym.envs.log_stream_env_hybrid import (
     DEFAULT_TAIL_EVENTS,
     _EBPF_SOURCE_MAP,
     _STRUCTURED_CHANNELS,

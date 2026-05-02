@@ -1,4 +1,4 @@
-"""Tests for SecurityLogStreamEnvV2 — hybrid text + structured observations."""
+"""Tests for SecurityLogStreamHybridEnv: hybrid text + structured observations."""
 
 import numpy as np
 import pytest
@@ -11,10 +11,10 @@ from security_gym.envs.log_stream_env import (
     ACTION_THROTTLE,
     ACTION_ISOLATE,
 )
-from security_gym.envs.log_stream_env_v2 import (
-    SecurityLogStreamEnvV2,
-    _TEXT_CHANNELS,
+from security_gym.envs.log_stream_env_hybrid import (
+    SecurityLogStreamHybridEnv,
     _STRUCTURED_CHANNELS,
+    _TEXT_CHANNELS,
 )
 from security_gym.envs.ebpf_encoding import FILE_COLS, NETWORK_COLS, PROCESS_COLS
 
@@ -29,7 +29,7 @@ def _make_action(action: int = ACTION_PASS, risk_score: float = 0.0) -> dict:
 
 class TestResetObservation:
     def test_reset_returns_hybrid_obs(self, tmp_db_with_ebpf):
-        env = SecurityLogStreamEnvV2(db_path=str(tmp_db_with_ebpf))
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf))
         obs, info = env.reset()
 
         # Text channels are strings
@@ -46,7 +46,7 @@ class TestResetObservation:
 
     def test_ebpf_channels_shape(self, tmp_db_with_ebpf):
         tail = 20
-        env = SecurityLogStreamEnvV2(
+        env = SecurityLogStreamHybridEnv(
             db_path=str(tmp_db_with_ebpf), tail_events=tail,
         )
         obs, _ = env.reset()
@@ -57,7 +57,7 @@ class TestResetObservation:
 
     def test_text_channels_unchanged(self, tmp_db_with_ebpf):
         """Text channels still work as plain strings."""
-        env = SecurityLogStreamEnvV2(db_path=str(tmp_db_with_ebpf))
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf))
         obs, _ = env.reset()
         # First event is auth_log, so auth_log should have content
         assert len(obs["auth_log"]) > 0
@@ -67,7 +67,7 @@ class TestResetObservation:
 class TestStepObservation:
     def test_ebpf_events_populate_arrays(self, tmp_db_with_ebpf):
         """After stepping through eBPF events, structured channels have data."""
-        env = SecurityLogStreamEnvV2(db_path=str(tmp_db_with_ebpf))
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf))
         env.reset()
 
         # Step through all events, keeping last non-truncated obs
@@ -91,7 +91,7 @@ class TestStepObservation:
 
     def test_timestamp_deltas(self, tmp_db_with_ebpf):
         """Verify delta computation produces non-zero values after first event."""
-        env = SecurityLogStreamEnvV2(db_path=str(tmp_db_with_ebpf))
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf))
         env.reset()
 
         # Step through all events, keeping last non-truncated obs
@@ -114,7 +114,7 @@ class TestStepObservation:
 
 class TestEmptyDB:
     def test_empty_db_zeros(self, empty_db):
-        env = SecurityLogStreamEnvV2(db_path=str(empty_db))
+        env = SecurityLogStreamHybridEnv(db_path=str(empty_db))
         obs, info = env.reset()
         for ch in _TEXT_CHANNELS:
             assert obs[ch] == ""
@@ -125,12 +125,12 @@ class TestEmptyDB:
         env.close()
 
 
-class TestV1Unaffected:
-    def test_v1_still_works(self, tmp_db_with_ebpf):
-        """V1 env is completely unaffected by v2 changes."""
+class TestTextModeUnaffected:
+    def test_text_mode_still_works(self, tmp_db_with_ebpf):
+        """Text-mode env is unaffected by Hybrid-mode logic."""
         env = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf)
         obs, info = env.reset()
-        # V1 returns strings for all channels including eBPF
+        # Text mode returns strings for all channels including eBPF
         assert isinstance(obs["process_events"], str)
         assert isinstance(obs["network_events"], str)
         assert isinstance(obs["file_events"], str)
@@ -147,24 +147,11 @@ class TestGymnasiumMake:
         assert isinstance(obs["process_events"], np.ndarray)
         env.close()
 
-    def test_legacy_v2_alias_warns(self, tmp_db_with_ebpf):
-        """The deprecated v2 alias resolves to the hybrid env with a warning."""
-        import warnings
-
-        with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always")
-            env = gym.make("SecurityLogStream-v2", db_path=str(tmp_db_with_ebpf))
-            env.reset()
-            env.close()
-
-        deprecations = [w for w in captured if issubclass(w.category, DeprecationWarning)]
-        assert any("SecurityLogStream-Hybrid-v0" in str(w.message) for w in deprecations)
-
 
 class TestDefenseActionsInherited:
     def test_block_throttle_isolate(self, tmp_db_with_ebpf):
-        """Defense actions from v1 work in v2."""
-        env = SecurityLogStreamEnvV2(db_path=str(tmp_db_with_ebpf))
+        """Defense actions inherited from the Text-mode env work in Hybrid mode."""
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf))
         env.reset()
 
         # Block source
@@ -181,20 +168,20 @@ class TestDefenseActionsInherited:
 
 
 class TestRewardUnchanged:
-    def test_reward_matches_v1(self, tmp_db_with_ebpf):
-        """V2 reward logic is inherited from v1 — same values."""
-        env_v1 = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf)
-        env_v2 = SecurityLogStreamEnvV2(db_path=str(tmp_db_with_ebpf))
+    def test_reward_matches_text_mode(self, tmp_db_with_ebpf):
+        """Hybrid-mode reward logic is inherited from Text mode: identical values."""
+        env_text = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf)
+        env_hybrid = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf))
 
-        env_v1.reset(seed=42)
-        env_v2.reset(seed=42)
+        env_text.reset(seed=42)
+        env_hybrid.reset(seed=42)
 
         action = _make_action(ACTION_PASS, risk_score=5.0)
 
-        _, r1, _, _, _ = env_v1.step(action)
-        _, r2, _, _, _ = env_v2.step(action)
+        _, r1, _, _, _ = env_text.step(action)
+        _, r2, _, _, _ = env_hybrid.step(action)
 
         assert r1 == pytest.approx(r2)
 
-        env_v1.close()
-        env_v2.close()
+        env_text.close()
+        env_hybrid.close()

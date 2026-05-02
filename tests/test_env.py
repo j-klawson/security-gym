@@ -344,19 +344,6 @@ class TestGymnasiumRegistration:
         assert "auth_log" in obs
         env.close()
 
-    def test_legacy_alias_warns(self, tmp_db):
-        """The deprecated v1 alias still resolves but emits a DeprecationWarning."""
-        import warnings
-
-        with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always")
-            env = gym.make("SecurityLogStream-v1", db_path=tmp_db)
-            env.reset()
-            env.close()
-
-        deprecations = [w for w in captured if issubclass(w.category, DeprecationWarning)]
-        assert any("SecurityLogStream-Text-v0" in str(w.message) for w in deprecations)
-
 
 class TestRewardConfig:
     def test_risk_reward_disabled(self, tmp_db):

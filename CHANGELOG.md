@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1
+
+### Removed deprecation aliases
+
+The `SecurityLogStream-v1` and `SecurityLogStream-v2` aliases registered in 0.4.0 are removed. Use `SecurityLogStream-Text-v0` and `SecurityLogStream-Hybrid-v0` instead. The deprecation window was closed early because the only known consumers (`rlsecd`, `chronos-sec`) are coordinated repos under the same maintainer; carrying the aliases for an extended window provided no real protection.
+
+### Renamed internal class and module
+
+The Hybrid-mode env class and module are renamed to match the registered ID:
+
+- `SecurityLogStreamEnvV2` → `SecurityLogStreamHybridEnv`
+- `security_gym.envs.log_stream_env_v2` → `security_gym.envs.log_stream_env_hybrid`
+
+The corresponding test module is renamed to `tests/test_env_hybrid.py`.
+
 ## 0.4.0
 
 ### Renamed environment IDs
