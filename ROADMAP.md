@@ -302,7 +302,7 @@ Convert the three eBPF text channels to fixed-width numeric arrays. No new kerne
 - [x] `StructuredRingBuffer` — circular numpy buffer with O(1) append and chronological snapshot (`envs/structured_buffer.py`)
 - [x] `ebpf_encoding.py` — mmh3 hashing with per-field seeds, syscall enum, flag bitmask, log-scaled deltas, per-channel row extraction
 - [x] `SecurityLogStreamHybridEnv` — subclass with hybrid text + structured observation space, process tree depth tracking, per-channel timestamp deltas (`envs/log_stream_env_hybrid.py`)
-- [x] Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs retained as deprecated aliases through 0.4.x (removal in 0.5.0).
+- [x] Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs were briefly retained as deprecated aliases in 0.4.0 and removed in 0.4.1.
 - [x] `SecurityGymStream` `structured=True` mode — same hybrid observation in batch/streaming adapter
 - [x] Tests: 288 passing (47 new: ring buffer, encoding, hybrid env integration, adapter structured mode)
 - [x] Read structured fields from existing `parsed` JSON column in EventStore — no schema changes needed
@@ -373,7 +373,7 @@ BPF LSM programs can return `-EPERM` to deny operations. This creates a direct m
 
 2. **tail_events default**: Text channels use `tail_lines=500`. For structured channels, each "event" is a fixed-width row, so memory is predictable. Higher values (1000–2000) give the agent more temporal context without the truncation issues of text channels. Need to benchmark memory and training speed.
 
-3. **Backward compatibility**: Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs are kept as deprecated aliases. The Text→Hybrid migration in rlsecd needs the adapter to support both.
+3. **Backward compatibility**: Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs were removed in 0.4.1. The Text→Hybrid migration in rlsecd needs the adapter to support both modes directly.
 
 4. **LSM hook granularity**: P2 hooks (mount, inode_link, inode_rename) generate high event volume on normal systems. May need filtering (e.g., only log mount operations outside known mount points, only log inode operations on sensitive paths). This filtering logic lives in the BPF C program to avoid flooding the perf buffer.
 
