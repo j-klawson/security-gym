@@ -4,12 +4,14 @@
 [![PyPI](https://img.shields.io/pypi/v/security-gym)](https://pypi.org/project/security-gym/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Gymnasium](https://img.shields.io/badge/Gymnasium-%E2%89%A51.0.0-blue)](https://gymnasium.farama.org/)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18810298.svg)](https://doi.org/10.5281/zenodo.18810298)
-[![Dataset DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18901627.svg)](https://doi.org/10.5281/zenodo.18901627)
+[![Dataset DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18901541.svg)](https://doi.org/10.5281/zenodo.18901541)
+[![HF Dataset](https://img.shields.io/badge/%F0%9F%A4%97-Dataset-blue)](https://huggingface.co/datasets/j-klawson/security-gym-v4)
 
 Gymnasium-compatible environment for security defense research. The agent observes raw text streams — like `tail -N` on log files and kernel event channels — and takes defensive actions (block, throttle, alert, isolate) that causally affect future observations.
 
 Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-lived agents that continually learn from non-stationary sensory streams.
+
+**Dataset access** — The v4 dataset is mirrored on HuggingFace ([`j-klawson/security-gym-v4`](https://huggingface.co/datasets/j-klawson/security-gym-v4), 188 MB compressed, 7d/30d/90d streams) and on Zenodo ([10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541), 13.7 GB compressed, full release including the 365-day stream). MLCommons Croissant 1.0 metadata with Responsible AI fields ships at `data/croissant.json`.
 
 ## Features
 

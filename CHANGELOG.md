@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.2
+
+### Added HuggingFace dataset mirror and Croissant metadata
+
+The v4 dataset is now mirrored at [`huggingface.co/datasets/j-klawson/security-gym-v4`](https://huggingface.co/datasets/j-klawson/security-gym-v4) for low-friction reviewer access. The mirror hosts the three smaller composed streams (7d/30d/90d, totaling 188 MB compressed); the full release including the 365-day stream and the underlying base databases remains on Zenodo only due to size.
+
+A MLCommons Croissant 1.0 metadata file with Responsible AI fields is committed at `data/croissant.json` and uploaded to the root of the HuggingFace dataset. It documents the schema, distributions across both mirrors, citation, and the RAI block (data collection, annotation protocol, preprocessing, biases, limitations, intended/not-intended use, social impact, PII handling). Validates via `mlcroissant`.
+
+### Fixed Zenodo dataset concept DOI in `data/DATASET_README.md` and `README.md`
+
+The Zenodo dataset concept DOI is `10.5281/zenodo.18901541`, retrieved from the Zenodo JSON API `conceptdoi` field on the v4 record. The previously-cited `10.5281/zenodo.18901627` was actually the security-gym software v0.3.3 record, not a dataset concept. Documentation now uses the correct DOI; the software Zenodo DOI badge in `README.md` is removed (PyPI is the durable software identifier; the Zenodo software deposit was carrying maintenance cost without serving readers).
+
+### Trimmed software Zenodo citation from BibTeX block in `data/DATASET_README.md`
+
+The `@software{...}` BibTeX entry in the dataset README no longer pins a `version` or `doi` to the Zenodo software deposit; reproducibility for the software is now anchored on PyPI version pins (`pip install security-gym==0.4.2`).
+
 ## 0.4.1
 
 ### Removed deprecation aliases

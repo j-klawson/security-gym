@@ -161,7 +161,9 @@ The `validate_labels.py` script runs 9 automated checks:
 
 ## Citation
 
-The dataset has a Zenodo **concept DOI** ([10.5281/zenodo.18901627](https://doi.org/10.5281/zenodo.18901627)) that always resolves to the latest version, and per-version DOIs for reproducibility (v3: [10.5281/zenodo.18901542](https://doi.org/10.5281/zenodo.18901542); v4: [10.5281/zenodo.19482383](https://doi.org/10.5281/zenodo.19482383)). Cite the version-specific DOI in papers.
+The dataset has a Zenodo **concept DOI** ([10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541)) that always resolves to the latest version, and a per-version DOI for reproducibility (v4: [10.5281/zenodo.19482383](https://doi.org/10.5281/zenodo.19482383)). Cite the version-specific DOI in papers.
+
+A HuggingFace mirror of the three smaller composed streams (7d, 30d, 90d, totaling 188 MB compressed) is available at [huggingface.co/datasets/j-klawson/security-gym-v4](https://huggingface.co/datasets/j-klawson/security-gym-v4) for low-friction reviewer access. The 365-day stream and the underlying base databases (`benign_v4`, `campaigns_v2`) live on Zenodo only due to size. A Croissant (MLCommons 1.0) metadata file with Responsible AI fields lives both at `data/croissant.json` in this repository and at the root of the HuggingFace dataset.
 
 ```bibtex
 @dataset{lawson_security_gym_dataset_2026,
@@ -179,9 +181,7 @@ The dataset has a Zenodo **concept DOI** ([10.5281/zenodo.18901627](https://doi.
   author    = {Lawson, Keith},
   title     = {Security-Gym: Gymnasium Environments for Cybersecurity
                Threat Detection with Continual Learning},
-  version   = {0.3.12},
   year      = {2026},
-  doi       = {10.5281/zenodo.18810298},
   url       = {https://github.com/j-klawson/security-gym},
   license   = {Apache-2.0}
 }
