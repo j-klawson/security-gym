@@ -52,11 +52,20 @@
   "url": "https://huggingface.co/datasets/j-klawson/security-gym-v4",
   "version": "4.0.0",
   "datePublished": "2026-04-09",
-  "creator": {
-    "@type": "sc:Person",
-    "name": "Keith Lawson",
-    "affiliation": "London Health Sciences Centre"
-  },
+  "creator": [
+    {
+      "@type": "sc:Person",
+      "name": "Keith Lawson",
+      "affiliation": "University of Michigan-Dearborn",
+      "email": "keithlaw@umich.edu"
+    },
+    {
+      "@type": "sc:Person",
+      "name": "Hafiz Malik",
+      "affiliation": "University of Michigan-Dearborn",
+      "email": "hafiz@umich.edu"
+    }
+  ],
   "publisher": {
     "@type": "sc:Organization",
     "name": "Zenodo / HuggingFace"
@@ -73,7 +82,7 @@
     "SIEM",
     "Gymnasium environment"
   ],
-  "citeAs": "@dataset{lawson_security_gym_dataset_2026, author = {Lawson, Keith}, title = {Security-Gym Dataset: Labeled Linux Log and eBPF Streams for Continual Learning Research}, version = {4.0}, year = {2026}, doi = {10.5281/zenodo.19482383}, url = {https://doi.org/10.5281/zenodo.19482383}, license = {Apache-2.0}}",
+  "citeAs": "@dataset{lawson_security_gym_dataset_2026, author = {Lawson, Keith and Malik, Hafiz}, title = {Security-Gym Dataset: Labeled Linux Log and eBPF Streams for Continual Learning Research}, version = {4.0}, year = {2026}, doi = {10.5281/zenodo.19482383}, url = {https://doi.org/10.5281/zenodo.19482383}, license = {Apache-2.0}}",
   "sameAs": [
     "https://doi.org/10.5281/zenodo.19482383",
     "https://doi.org/10.5281/zenodo.18901541"
