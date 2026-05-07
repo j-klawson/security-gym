@@ -7,6 +7,7 @@
     "conformsTo": "dct:conformsTo",
     "cr": "http://mlcommons.org/croissant/",
     "rai": "http://mlcommons.org/croissant/RAI/",
+    "prov": "http://www.w3.org/ns/prov#",
     "data": {
       "@id": "cr:data",
       "@type": "@json"
@@ -107,54 +108,106 @@
   "rai:dataUseCases": "Streaming continual reinforcement learning research; online representation learning from raw text and structured kernel-event streams; streaming deep-RL technique validation (LMS, ObGD, EMA normalization, sparse initialization); reward design in observation-suppressing environments; comparative evaluation of detection approaches (learned vs. rule-based) on non-stationary data.",
   "rai:dataNotIntendedUseCases": "Production SOC tooling. Models of enterprise infrastructure. Zero-day generalization evaluation. Substitutes for real-world deployment validation. Multi-host lateral-movement studies. The bundled attack modules target a purpose-built lab VM (`isildur`) and must not be directed at third-party infrastructure.",
   "rai:dataSocialImpact": "Research benchmark for continual learning on real cybersecurity telemetry. Releases otherwise unavailable PII-scrubbed Linux server traces with both traditional log channels and eBPF kernel events to enable academic reproduction of streaming-RL results in cybersecurity defense.",
-  "rai:sourceDatasets": [
+  "prov:wasDerivedFrom": [
     {
-      "@type": "rai:Dataset",
-      "name": "MITRE ATT&CK Enterprise Matrix",
-      "url": "https://attack.mitre.org/matrices/enterprise/",
-      "description": "Source taxonomy of adversary tactics and techniques. Each Security-Gym attack campaign maps to one or more ATT&CK technique IDs (e.g., T1110 brute force, T1190 web exploitation, T1046 service discovery, T1059.004 unix shell, T1499 endpoint DoS, T1021 remote services). Used as the conceptual seed for the synthetic attack campaign design and for the per-stream attack-type distributions in StreamComposer."
+      "@id": "https://attack.mitre.org/matrices/enterprise/",
+      "@type": "sc:Dataset",
+      "name": "mitre-attack-enterprise-matrix",
+      "alternateName": "MITRE ATT&CK Enterprise Matrix",
+      "publisher": {"@type": "sc:Organization", "name": "The MITRE Corporation"},
+      "license": "https://attack.mitre.org/resources/legal-and-branding/terms-of-use/",
+      "version": "v17 (April 2026)",
+      "description": "Source taxonomy of adversary tactics and techniques. Each Security-Gym attack campaign maps to one or more ATT&CK technique IDs (T1110 brute force, T1190 web exploitation, T1046 service discovery, T1059.004 unix shell, T1499 endpoint DoS, T1021 remote services). Used as the conceptual seed for the synthetic attack campaign design and for the per-stream attack-type distributions in StreamComposer. License compatibility: MITRE ATT&CK terms permit redistribution and derivative works with attribution; Security-Gym only inherits ATT&CK technique identifiers, not the underlying ATT&CK content."
     },
     {
-      "@type": "rai:Dataset",
-      "name": "Security-Gym Campaign Configurations",
-      "url": "https://github.com/j-klawson/security-gym/tree/main/security_gym/campaigns",
-      "description": "Per-campaign YAML configurations specifying attack phases, timing profiles (constant, accelerating, burst), and target identities. These configs plus the orchestrator code are the deterministic seeds for synthetic attack event generation; reproducible regeneration of any released stream requires only the configs, the orchestrator, and a fixed RNG seed."
+      "@id": "https://github.com/j-klawson/security-gym/tree/main/security_gym/campaigns",
+      "@type": "sc:Dataset",
+      "name": "security-gym-campaigns",
+      "alternateName": "Security-Gym campaign configurations and orchestrator (synthetic-data seeds)",
+      "publisher": {"@type": "sc:Organization", "name": "Security-Gym authors (University of Michigan-Dearborn)"},
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "version": "0.4.2",
+      "datePublished": "2026-05-03",
+      "description": "Per-campaign YAML configurations specifying attack phases, timing profiles (constant, accelerating, burst), and target identities, plus the Python campaign orchestrator that consumes them. These two artifacts are the deterministic seeds for the synthetic attack events in this dataset: reproducible regeneration of any released stream requires only the configs, the orchestrator code, and a fixed RNG seed. No language models or other generative models were used in attack-event synthesis."
     },
     {
-      "@type": "rai:Dataset",
-      "name": "First-party Linux server logs (author-operated)",
-      "description": "Benign baseline events were collected from four Linux servers operated by the dataset author over multi-month windows. No upstream public dataset was used. Server identities are scrubbed and replaced with the synthetic target identity (isildur / 192.168.2.201) before release."
+      "@id": "https://github.com/j-klawson/security-gym",
+      "@type": "sc:Dataset",
+      "name": "security-gym-first-party-linux-logs",
+      "alternateName": "First-party Linux server logs from author-operated infrastructure",
+      "publisher": {"@type": "sc:Organization", "name": "Security-Gym authors (University of Michigan-Dearborn)"},
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "version": "4.0.0",
+      "datePublished": "2026-04-09",
+      "description": "Benign baseline events were collected from four Linux servers operated by the dataset author over multi-month windows; no upstream public dataset was used. Server identities are scrubbed and replaced with the synthetic target identity (isildur / 192.168.2.201) before release. The first-party origin means no external license restrictions are inherited; the released benign data is offered under the same Apache-2.0 terms as the rest of the dataset."
     }
   ],
-  "rai:provenanceActivities": [
+  "prov:wasGeneratedBy": [
     {
-      "@type": "rai:Activity",
-      "activityType": "Collection",
-      "description": "Benign Linux server logs (auth.log, syslog, nginx access/error) collected over multi-month windows from four author-operated servers. eBPF kernel events (sys_enter_execve, sched_process_exit, sys_enter_connect, sys_enter_accept4, sys_enter_openat, sys_enter_unlinkat) collected over 24-hour windows on three Debian 13 servers (a hypervisor, a public web server, and a GPU lab server) via BCC tracepoints. No third-party infrastructure was probed.",
-      "platform": "Native Linux logging facilities (rsyslog, OpenSSH, nginx) plus BCC eBPF agent."
+      "@type": "prov:Activity",
+      "name": "Benign telemetry collection",
+      "prov:type": "Collection",
+      "description": "Benign Linux server logs (auth.log, syslog, nginx access/error) collected over multi-month windows from four author-operated servers. eBPF kernel events (sys_enter_execve, sched_process_exit, sys_enter_connect, sys_enter_accept4, sys_enter_openat, sys_enter_unlinkat) collected over 24-hour windows on three Debian 13 servers (a hypervisor, a public web server, and a GPU lab server) via BCC tracepoints. No third-party infrastructure was probed; no crowdworkers or external annotators involved.",
+      "prov:wasAssociatedWith": {
+        "@type": "prov:Agent",
+        "name": "Keith Lawson",
+        "affiliation": "University of Michigan-Dearborn",
+        "agentType": "Human (sole operator)",
+        "location": "Canada / United States"
+      },
+      "platform": "Native Linux logging facilities (rsyslog, OpenSSH, nginx) plus a BCC-based eBPF agent."
     },
     {
-      "@type": "rai:Activity",
-      "activityType": "Synthesis",
-      "description": "Adversary events generated by a custom Python campaign orchestrator (security_gym/campaigns/) executing 10 scripted MITRE ATT&CK-aligned campaigns against an isolated UTM-virtualised Debian 11 lab VM. Six attack modules are released: brute_force, web_attack, recon, malware, dos, lateral_movement. No human attackers, no LLM-generated content; all attack traffic is the deterministic output of the YAML-configured orchestrator under a fixed RNG seed.",
-      "platform": "Custom Python campaign orchestrator targeting a UTM Debian 11 lab VM (isildur, 192.168.2.201)."
+      "@type": "prov:Activity",
+      "name": "Synthetic attack-event generation",
+      "prov:type": "Synthesis",
+      "description": "Adversary events generated by a custom Python campaign orchestrator (security_gym/campaigns/) executing 10 scripted MITRE ATT&CK-aligned campaigns against an isolated UTM-virtualised Debian 11 lab VM. Six attack modules are released (brute_force, web_attack, recon, malware, dos, lateral_movement). All attack traffic is the deterministic output of the YAML-configured orchestrator under a fixed RNG seed. No language models, no generative AI, no human attackers; the orchestrator is purely procedural Python with explicit phase scripts.",
+      "prov:wasAssociatedWith": {
+        "@type": "prov:SoftwareAgent",
+        "name": "Security-Gym campaign orchestrator",
+        "version": "0.4.2",
+        "agentType": "Procedural Python (no LLM, no generative model)",
+        "validation": "Every released stream passes nine automated validation checks (see Validation activity below), including raw-line regex spot checks per attack type and attack-type distribution checks against composition weights."
+      },
+      "platform": "Custom Python campaign orchestrator targeting a UTM-virtualised Debian 11 lab VM (isildur, 192.168.2.201)."
     },
     {
-      "@type": "rai:Activity",
-      "activityType": "Annotation",
-      "description": "Attack labelling via CampaignLabeler with time-window plus source-IP matching against orchestrator-recorded attack phases (events with no src_ip match on time window alone). Benign-baseline pre-screening via MaliciousFilter using deterministic web/auth signature rules: path traversal, SQL injection, XSS, JNDI injection, RFI, scanner user-agents, failed-password sequences. All annotation is fully automated; no human annotators were involved.",
-      "platform": "Custom Python labeller (CampaignLabeler + MaliciousFilter) in the security-gym repository."
+      "@type": "prov:Activity",
+      "name": "Automated labelling and benign-baseline filtering",
+      "prov:type": "Annotation",
+      "description": "Attack labelling via CampaignLabeler with time-window plus source-IP matching against orchestrator-recorded attack phases (events with no src_ip match on time window alone). Benign-baseline pre-screening via MaliciousFilter using deterministic web/auth signature rules: path traversal, SQL injection, XSS, JNDI injection, RFI, scanner user-agents, failed-password sequences. No human annotators, no crowdworkers; all annotation is fully automated and deterministic given the inputs.",
+      "prov:wasAssociatedWith": {
+        "@type": "prov:SoftwareAgent",
+        "name": "CampaignLabeler + MaliciousFilter",
+        "version": "0.4.2",
+        "agentType": "Procedural Python (no LLM)"
+      },
+      "platform": "security_gym.labeling module."
     },
     {
-      "@type": "rai:Activity",
-      "activityType": "Preprocessing",
+      "@type": "prov:Activity",
+      "name": "PII scrubbing, compression, and stream composition",
+      "prov:type": "Preprocessing",
       "description": "PII scrubbing applies case-insensitive hostname/domain/IP replacement to a single synthetic target identity (isildur / 192.168.2.201). Source IPs from detected attackers in the benign baseline are excluded before release. Storage is Zstandard-compressed SQLite. Composed experiment streams are produced by StreamComposer with per-stream MITRE ATT&CK-aligned Poisson-scheduled attack injection and 24.2% eBPF downsampling.",
-      "platform": "Python pipeline (PII scrubber + StreamComposer + Zstandard)."
+      "prov:wasAssociatedWith": {
+        "@type": "prov:SoftwareAgent",
+        "name": "PII scrubber + StreamComposer",
+        "version": "0.4.2",
+        "agentType": "Procedural Python"
+      },
+      "platform": "security_gym.preprocessing and security_gym.streams modules."
     },
     {
-      "@type": "rai:Activity",
-      "activityType": "Validation",
+      "@type": "prov:Activity",
+      "name": "Automated validation of released streams",
+      "prov:type": "Validation",
       "description": "Each composed stream passes nine automated validation checks: (1) label consistency (is_malicious=1 implies non-NULL attack_type/stage/severity), (2) raw-line spot checks via regex per attack type, (3) campaign boundary containment, (4) campaign-type cross-validation, (5) target-array consistency for the SecurityGymStream adapter, (6) attack-type distribution against composition weights, (7) temporal order monotonicity, (8) no unlabelled events, (9) session coherence (all events in a session share the same is_malicious label).",
+      "prov:wasAssociatedWith": {
+        "@type": "prov:SoftwareAgent",
+        "name": "validate_labels.py",
+        "version": "0.4.2",
+        "agentType": "Procedural Python"
+      },
       "platform": "validate_labels.py in the security-gym repository."
     }
   ],
