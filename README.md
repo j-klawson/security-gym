@@ -11,6 +11,10 @@ Gymnasium-compatible environment for security defense research. The agent observ
 
 Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-lived agents that continually learn from non-stationary sensory streams.
 
+![Security-Gym environment interaction loop](https://raw.githubusercontent.com/j-klawson/security-gym/main/figures/env-schematic.png)
+
+*The continual-RL interaction loop. Telemetry sources (system logs and eBPF kernel events) are encoded as a Dict observation under one of two registered modes (Text or Hybrid). A streaming continual learner (no replay buffer; predict-then-update) emits a Dict action pairing a discrete defensive response with a continuous risk score, which updates a shared defense state (blocklist, throttle list, isolation mode). The dashed feedback edge captures the central difficulty of the domain: defensive actions causally suppress future observations on a continuous, non-episodic stream (`terminated = False`). The vector source is at [`figures/env-schematic.tex`](https://github.com/j-klawson/security-gym/blob/main/figures/env-schematic.tex).*
+
 **Dataset access** — The v4 dataset is mirrored on HuggingFace ([`j-klawson/security-gym-v4`](https://huggingface.co/datasets/j-klawson/security-gym-v4), 188 MB compressed, 7d/30d/90d streams) and on Zenodo ([10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541), 13.7 GB compressed, full release including the 365-day stream). MLCommons Croissant 1.0 metadata with Responsible AI fields ships at `data/croissant.json`.
 
 ## Features
