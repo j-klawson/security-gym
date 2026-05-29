@@ -181,6 +181,19 @@ Add BPF LSM security decision signals. Requires kernel config on Isildur.
 - [ ] Enforcement map prototype: `BPF_HASH(blocked_pids)` readable by LSM hooks, writable from userspace
 - [ ] Tests: LSM obs space, hook enum, enforcement map
 
+## Phase 13c — Agent-side string encoding (representation neutrality)
+
+Hybrid mode currently pre-hashes string fields (command, IP, path) into the observation via MurmurHash3 in `src/security_gym/envs/ebpf_encoding.py` (`hash_string`, type-keyed seeds). On a real server, string→number encoding is an agent-side perception choice, not something the host does; pre-hashing is lossy and irreversible, so a Hybrid-mode agent cannot try alternative encodings (learned embeddings, char-level, n-grams). Flagged by self-review during the RLC submission (2026-05-29) and noted as a limitation in the RLC paper (§3.1, §7.3 "Text vs. Hybrid encoding").
+
+- [ ] Add a raw-structured observation mode that emits string fields as raw tokens/IDs (or short byte sequences) instead of hashes, leaving encoding to the agent
+- [ ] Keep the current Hybrid (pre-hashed) mode as a clearly-documented convenience option
+- [ ] Offer the MurmurHash3 hashing as an optional agent-side wrapper (the `features/hasher.py` utility already exists); env emits raw, agent opts in
+- [ ] Re-run baselines under raw-structured mode to confirm parity with the pre-hashed convenience path
+
+## Open Questions
+
+- [ ] Revisit the `true_risk` score (the GVF-like auxiliary risk target, `_RISK_MAP`/`_ground_truth_risk` → risk-score MSE reward term). `include_risk_reward` now defaults to `False` (commit a5ceae9), so the risk-prediction head is effectively dormant. Decide whether `true_risk` should be removed entirely (ground-truth field, `Box(1)` risk_score action component, `risk_reward` term, and the label-validator range check) or retained as an opt-in auxiliary task. Touch points: `envs/log_stream_env.py`, `envs/log_stream_env_hybrid.py`, `adapters/scan_stream.py`, `scripts/validate_labels.py`, and tests in `tests/test_env.py` / `tests/test_scan_stream.py`.
+
 ## Housekeeping
 
 - [x] Add campaign YAML files for Log4Shell and recon-only scenarios
