@@ -95,7 +95,7 @@ IP-targeted actions use the current event's source IP. The agent can escalate an
 
 ## Reward Function
 
-Three components combined:
+Two components by default (an action term and ongoing consequences), plus an optional risk-score term:
 
 **Action reward** (asymmetric — mistakes in both directions are costly):
 
@@ -108,7 +108,7 @@ Three components combined:
 | `isolate` | +0.25 | -2.0 |
 | `unblock` | -0.5 | 0.0 |
 
-**Risk score MSE**: `-0.1 * (predicted_risk - true_risk)^2` — penalizes inaccurate threat assessment.
+**Risk score MSE** (optional, *disabled by default*; enable via `reward_config={"include_risk_reward": True}`): `-0.1 * (predicted_risk - true_risk)^2` — penalizes inaccurate threat assessment. It is off by default because, as a per-event term that accumulates against every observed event, it can make observation-suppressing actions (block/throttle/isolate) rationally dominant.
 
 **Ongoing consequences**: blocked/throttled events accumulate reward between steps (+0.1 per blocked attack event, -0.5 per blocked benign event). The agent feels the sustained cost of false positives.
 

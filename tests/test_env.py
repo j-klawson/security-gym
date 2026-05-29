@@ -165,8 +165,11 @@ class TestRewardFunction:
         env.close()
 
     def test_risk_score_mse(self, tmp_db):
-        """Risk score far from ground truth incurs negative reward."""
-        env = SecurityLogStreamEnv(db_path=tmp_db)
+        """Risk score far from ground truth incurs negative reward (term enabled)."""
+        env = SecurityLogStreamEnv(
+            db_path=tmp_db,
+            reward_config={"include_risk_reward": True},
+        )
         env.reset()
         # Pass with risk_score=10.0 on benign (true_risk=0.0) → big MSE penalty
         _, reward_bad, _, _, _ = env.step(_make_action(ACTION_PASS, 10.0))
@@ -360,9 +363,23 @@ class TestRewardConfig:
             assert reward == pytest.approx(0.0, abs=0.01)
         env.close()
 
-    def test_risk_reward_enabled_default(self, tmp_db):
-        """Default include_risk_reward=True preserves MSE penalty."""
+    def test_risk_reward_default_disabled(self, tmp_db):
+        """Default (no reward_config) disables the risk-MSE term."""
         env = SecurityLogStreamEnv(db_path=tmp_db)
+        env.reset()
+        # Pass on benign with wildly wrong risk_score=10.0; with the term off
+        # by default the prediction error must not affect the reward.
+        _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 10.0))
+        if not info["ground_truth"]["is_malicious"]:
+            assert reward == pytest.approx(0.0, abs=0.01)
+        env.close()
+
+    def test_risk_reward_enabled(self, tmp_db):
+        """Enabling include_risk_reward applies the MSE penalty."""
+        env = SecurityLogStreamEnv(
+            db_path=tmp_db,
+            reward_config={"include_risk_reward": True},
+        )
         env.reset()
         _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 10.0))
         if not info["ground_truth"]["is_malicious"]:
@@ -371,10 +388,10 @@ class TestRewardConfig:
         env.close()
 
     def test_custom_risk_weight(self, tmp_db):
-        """Custom risk_weight scales the MSE penalty."""
+        """Custom risk_weight scales the MSE penalty (when the term is enabled)."""
         env = SecurityLogStreamEnv(
             db_path=tmp_db,
-            reward_config={"risk_weight": 1.0},
+            reward_config={"include_risk_reward": True, "risk_weight": 1.0},
         )
         env.reset()
         _, reward, _, _, info = env.step(_make_action(ACTION_PASS, 10.0))

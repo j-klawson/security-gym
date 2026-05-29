@@ -114,7 +114,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
 
         # Optional reward weight overrides
         self._reward_config = reward_config or {}
-        self._include_risk_reward: bool = self._reward_config.get("include_risk_reward", True)
+        self._include_risk_reward: bool = self._reward_config.get("include_risk_reward", False)
         self._risk_weight: float = float(self._reward_config.get("risk_weight", 0.1))
         self._benign_drop_penalty: float = float(self._reward_config.get("benign_drop_penalty", 0.5))
         self._malicious_drop_reward: float = float(self._reward_config.get("malicious_drop_reward", 0.1))
