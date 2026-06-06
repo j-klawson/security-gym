@@ -43,6 +43,15 @@ Generate labeled attack datasets by running campaigns against the Isildur VM.
 
 Fixed `event_type` being lost during EventStore serialization — the auth_log parser was the only parser that didn't store `event_type` in `fields["event_type"]`. Also added a safety net in EventStore to inject `event_type` into the parsed JSON if any parser omits it. Additionally, the auth_log parser now enriches PAM session open/close events with `src_ip` and `session_id` by caching PID→(ip, session_id) from preceding auth events. This unblocks rlsecd's `GymEventStoreSource` which needs `event_type` to distinguish auth_success from auth_failure without pattern-matching workarounds.
 
+## Feature — Block recovery: `block_visibility` + `block_ttl` (2026-06-06, v0.5.0)
+
+The defensive action set exposes `block_source` and `unblock`, but the block→unblock loop was unlearnable. Once an IP was blocked, `_advance` dropped 100% of its events so it never reappeared as an observation, and `unblock` only targets the current event's `src_ip`; an `unblock` directed at a blocked IP was therefore unreachable. Two opt-in, default-off, composable constructor parameters on `SecurityLogStreamEnv` (inherited by the Hybrid env) fix this without changing default behavior.
+
+- `block_visibility="deny_log"` (default `"drop"`) keeps the firewall drop (events still do not reach the server; the consequence reward still fires) but surfaces each blocked event as a ground-truth-blind `"[FIREWALL DENY] "` line. A wrongly-blocked benign IP keeps surfacing as denied entries, so an explicit `unblock` on it becomes reachable and meaningful; the deny rendering leaks no `is_malicious` label into the observation.
+- `block_ttl` (event-seconds, default `None`) adds fail2ban-style auto-expiry: a block lapses after the TTL and the IP re-surfaces for a fresh decision. Composes with `deny_log`.
+
+Reward accounting: a surfaced deny-log step contributes only the consequence term (action and risk zeroed) to avoid double-counting; episode-total consequence is unchanged from drop mode (only redistributed across steps). The default config (`"drop"`, `None`) reproduces the prior permanent-block semantics byte-for-byte, verified by a dedicated regression test. Implemented in the inherited `_advance`/`_apply_action`/`_compute_reward`; the Hybrid env threads the two params and mirrors the reset state. 11 new tests; full suite 324 passing (27 skipped), ruff/mypy/bandit clean. See CHANGELOG 0.5.0.
+
 ## Phase 6 — Experiments (Future)
 
 Connect security-gym to alberta-framework and run continual learning experiments.
@@ -376,6 +385,22 @@ BPF LSM programs can return `-EPERM` to deny operations. This creates a direct m
 3. **Backward compatibility**: Hybrid mode registered as `SecurityLogStream-Hybrid-v0` alongside `SecurityLogStream-Text-v0`. Legacy `SecurityLogStream-v1` / `SecurityLogStream-v2` IDs were removed in 0.4.1. The Text→Hybrid migration in rlsecd needs the adapter to support both modes directly.
 
 4. **LSM hook granularity**: P2 hooks (mount, inode_link, inode_rename) generate high event volume on normal systems. May need filtering (e.g., only log mount operations outside known mount points, only log inode operations on sensitive paths). This filtering logic lives in the BPF C program to avoid flooding the perf buffer.
+
+## Phase 14 — eBPF Benign-Data Validity (BLOCKED)
+
+Investigation (2026-06-05) into whether an RL agent can actually learn attack structure from the eBPF channels. The current benign-eBPF pipeline does not support this as intended, and the defect specifically threatens the eBPF ablation that anchors the kernel-telemetry contribution (Exp 13: 60% MAE reduction, Cohen's d=2.577). Log-only results (session F1 0.979) do not use eBPF ancestry or sessions and are not implicated.
+
+**STATUS: BLOCKED** on a separate bug (found 2026-06-05) that must be resolved before this work resumes. See TODO.md Phase 14 for the action checklist and open decisions.
+
+Three defects, with code evidence:
+
+1. **Sessionization asymmetry (label leakage).** Kernel events have no native session. The composer fabricates a per-campaign session only for attack eBPF (`data/composer.py:226-237`, keyed on the attacker IP), while benign eBPF stays NULL and collapses to a single "unknown" pseudo-session (process and file events carry no `src_ip`). A session-level scorer can separate benign from attack on the key structure alone, independent of kernel behavior.
+
+2. **Cross-server ancestry breakage.** `scripts/build_benign.py` merges eBPF from frodo, hopper, and 9600baud with unnamespaced `pid`/`ppid`. The `tree_depth` feature (Phase 13a, derived from a single pid-keyed depth tracker in `envs/log_stream_env_hybrid.py:167-170`) is therefore corrupted for benign events by cross-host PID collision, while single-host attack campaigns retain valid chains. Any "ancestry helps" effect is confounded with host-of-origin.
+
+3. **Distributional realism.** Three heterogeneous hosts stacked and timestamp-cycled do not reproduce any single host's kernel-event distribution; the benign baseline is a statistical chimera.
+
+Direction: diagnose before re-collecting. Namespace PIDs per source, replace the synthetic per-campaign session with a process-tree-rooted session applied symmetrically to benign and attack eBPF, then re-run Exp 13. If most of the effect survives, the corpus is salvageable and re-collection is a realism upgrade; if it collapses, re-collection is mandated and the collapse is itself a finding. The gold-standard fix is a single-host collect-with-attacks (e.g., 30 days), which removes the cross-server merge and the eBPF-transplant path entirely, but it must run on a host that is both coherent and realistically busy. Isildur is a frozen, near-idle Debian 11 VM, so coherence versus workload-realism is the central tension (a long idle collection would make attacks trivially separable). Candidate hosts: Isildur plus a synthetic realistic workload, or a new dedicated realistic target VM.
 
 ## Phase 12 — Analysis & Publication (Future)
 

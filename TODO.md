@@ -2,6 +2,45 @@
 
 Current action items for security-gym development.
 
+## Phase 14 — eBPF Benign-Data Validity (BLOCKED, 2026-06-05)
+
+**STATUS: BLOCKED.** A separate bug (found 2026-06-05) must be fixed before this work resumes. The bug was not yet described in session; record its specifics here once provided. [TODO: detail the gating bug.]
+
+Investigation prompted by the question of whether an RL agent can learn from eBPF events. The current benign-eBPF pipeline does not support this as intended. Three distinct defects were identified with code evidence. Log-only results (session F1 0.979) are not implicated; the exposure is specific to the eBPF ablation that anchors the kernel-telemetry contribution (Exp 13: 60% MAE reduction, Cohen's d=2.577).
+
+Defects:
+
+1. Sessionization asymmetry (label leakage). The eBPF parser emits no `session_id` (`src/security_gym/parsers/ebpf.py:91`; defaults to `None` via `parsers/base.py:24`). The composer fabricates a session only for attack events: `_enrich_ebpf_fields` assigns `f"{dominant_ip}:ebpf_{cid}"` to eBPF events that share a campaign with log events (`src/security_gym/data/composer.py:226-237`). Benign eBPF stays NULL. Process and file events carry no `src_ip` (only network events derive one, `parsers/ebpf.py:82-89`), so under the documented fallback NULL to src_ip to "unknown" (`features/session.py:118-123`) the entire benign process/file stream collapses into one pseudo-session, while each attack burst gets a per-campaign session tagged with the attacker IP. Session-level scorers (rlsecd session EMA) can separate the two on key structure alone.
+
+2. Cross-server ancestry breakage. `scripts/build_benign.py` carries `pid`/`ppid` verbatim from frodo, hopper, and 9600baud into one table without namespacing. Raw `pid`/`ppid` feed the observation (`envs/ebpf_encoding.py:120-121`); `tree_depth` is computed from a single `_pid_depth` dict keyed on raw pid (`envs/log_stream_env_hybrid.py:167-170`), so cross-server PID collisions corrupt the one ancestry feature for benign events while attack campaigns (single-host Isildur) retain valid chains. Any "ancestry helps" effect is confounded with host-of-origin.
+
+3. Distributional realism. Three heterogeneous hosts stacked and timestamp-cycled (`composer._cycle_source`) do not reproduce any single host's kernel-event distribution; the benign baseline is a statistical chimera.
+
+Proposed fix and its limits: a single-host collect-with-attacks (e.g., 30 days on Isildur) directly fixes (2) and removes the eBPF-transplant path that manufactures (1)'s artifact. It is a precondition but not sufficient for (1): kernel events still require a defined session (process-tree rooted at the session leader, sshd, or login). It does not address (3) unless the host carries realistic workload; Isildur is a frozen, near-idle Debian 11 VM, so a long idle collection trades the chimera problem for a workload-poverty problem (attacks trivially separable from a near-silent background). Coherence versus workload-realism is the central tension.
+
+Recommended sequencing (diagnose before re-collecting):
+
+- [ ] Namespace eBPF `pid`/`ppid` per source (collection host) so ancestry does not collide across the merge.
+- [ ] Replace the synthetic per-campaign eBPF session with a process-tree-rooted session applied symmetrically to benign and attack eBPF.
+- [ ] Re-run Exp 13 on the corrected corpus and measure how much of the 60% MAE reduction survives. Survival implies the current data is salvageable and re-collection is a realism upgrade; collapse mandates re-collection, and the collapse is itself a finding.
+
+Open decisions (deferred until the blocker is cleared):
+
+- [ ] Sequencing: diagnose-first, commit to re-collection now, or both in parallel.
+- [ ] Target host/workload if re-collecting: Isildur plus synthetic realistic workload (preserves auditd ground truth, vuln services, ISILDUR_READY snapshots), a new dedicated realistic target VM, or (rejected) a real production server (PII plus attacking production).
+- [ ] Collection duration and the specific non-stationarity required (diurnal/weekly cycles, Poisson campaign base rate); whether a shorter genuinely-continuous collection plus disclosure suffices.
+- [ ] Paper/dataset blast radius: whether this supersedes the v4 streams and Zenodo version (DOI 10.5281/zenodo.19482383) and must land before the NeurIPS D&B submission.
+
+## Block recovery — `block_visibility` + `block_ttl` ✅ (v0.5.0, 2026-06-06)
+
+Fixed the block→unblock catch-22 in `SecurityLogStreamEnv`: a blocked IP's events were dropped 100% and never re-surfaced, while `unblock` only targets the current event's `src_ip`, so an `unblock` on a blocked IP was unreachable.
+
+- [x] `block_visibility="deny_log"` (opt-in; default `"drop"`): surface blocked events as ground-truth-blind `"[FIREWALL DENY] "` lines so `unblock` becomes reachable; no `is_malicious` leak into the observation.
+- [x] `block_ttl` (opt-in; default `None`): fail2ban-style auto-expiry; composes with `deny_log`.
+- [x] Reward double-count avoidance (denied steps contribute consequence only; action/risk zeroed); byte-for-byte backward compatibility under defaults.
+- [x] 11 new tests (deny_log loop, unblock-during-attack, GT-blind render, TTL resurface/reblock/compose, drop-mode byte-identical + permanent-block, hybrid mirrors); ruff/mypy/bandit clean.
+- Note: this resolves a block-behaviour observability defect. If it is the bug referenced as gating Phase 14 (2026-06-05), confirm before treating Phase 14 as unblocked — the Phase 14 work is eBPF-data-validity, logically independent of the block dynamics.
+
 ## Phase 5 — Data Collection ✅
 
 - [x] Run SSH brute force campaign against Isildur (`campaigns/ssh_brute_only.yaml`)
