@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0
+
+### Added opt-in block recovery: `block_visibility` and `block_ttl`
+
+The defensive action set exposes `block_source` and `unblock`, but the agent could not learn the block then unblock loop. Once an IP was blocked, `_advance` dropped 100% of its events, so the IP never reappeared as an observation; and `unblock` only targets the current event's `src_ip`. Blocking an IP therefore made it permanently unobservable for the rest of the episode, so an `unblock` directed at it was unreachable. Two opt-in, default-off, composable constructor parameters on `SecurityLogStreamEnv` (and `SecurityLogStreamHybridEnv`) restore observability and recoverability.
+
+`block_visibility` accepts `"drop"` (default) or `"deny_log"`. Under `"deny_log"`, a blocked IP's events are still dropped by the firewall (the events do not reach the server and the consequence reward still fires), but each one is surfaced in the observation as a ground-truth-blind firewall deny-log line prefixed `"[FIREWALL DENY] "`. A wrongly-blocked benign IP keeps producing events, which now surface as denied entries, giving the agent repeated steps where that IP is the current event so an explicit `unblock` becomes reachable and meaningful. A correctly-blocked attacker that goes quiet produces no events and costs nothing to leave blocked. The deny rendering is a pure function of agent-observable fields (a static prefix plus the original raw line) and never references `is_malicious`, `attack_type`, or `attack_stage`, so the surfaced observation leaks no label.
+
+`block_ttl` (event-time seconds, `None` by default for permanent blocks) auto-expires a block fail2ban-style: once `block_ttl` seconds of event-time elapse since the ban started, the IP is removed from the blocklist and its next event re-surfaces for a fresh decision. The two parameters compose; TTL expiry is evaluated first, then drop-or-surface per `block_visibility`.
+
+### Reward and step accounting under `deny_log`
+
+When the current observation is a surfaced deny-log entry, the firewall, not the agent's live decision, is acting on that event. The per-step action reward and risk term are zeroed and the event contributes only the consequence term (`+malicious_drop_reward` / `-benign_drop_penalty`), avoiding double-counting a single event under both the consequence and action terms. The agent's action on a denied event (for example `unblock`) is graded on the next live event it produces. Episode-total consequence reward is identical to `"drop"` mode; `"deny_log"` only redistributes it across steps (one step per blocked event rather than accumulating into one) and increases episode length accordingly.
+
+### Scope and limitations
+
+`block_visibility` governs only the 100%-block path; isolation and throttle are unchanged. In the Hybrid env, the structured eBPF channels carry no deny-log marker (no `raw_line`, no spare column), so a denied eBPF event is reward-correct but observationally indistinguishable in the structured array; the deny annotation is visible only in the text channels, where most blockable entities (auth and network events) are surfaced. The default configuration (`block_visibility="drop"`, `block_ttl=None`) reproduces the prior permanent-block semantics byte-for-byte, verified by a dedicated regression test.
+
 ## 0.4.2
 
 ### Added HuggingFace dataset mirror and Croissant metadata

@@ -12,6 +12,7 @@ from security_gym.envs.log_stream_env import (
     ACTION_BLOCK_SOURCE,
     ACTION_UNBLOCK,
     ACTION_ISOLATE,
+    DENY_LOG_PREFIX,
     _CHANNELS,
 )
 
@@ -457,6 +458,191 @@ class TestRiskScoreGroundTruth:
             if info["ground_truth"]["is_malicious"]:
                 assert info["ground_truth"]["true_risk"] > 0.0
                 break
+        env.close()
+
+
+class TestBlockVisibilityDenyLog:
+    """Opt-in deny_log visibility makes the block→unblock loop reachable."""
+
+    def test_invalid_block_visibility_raises(self, single_ip_db):
+        with pytest.raises(ValueError):
+            SecurityLogStreamEnv(db_path=single_ip_db, block_visibility="bogus")
+
+    def test_deny_log_block_surfaces_denied_then_unblock_restores(self, single_ip_db):
+        """Block a benign IP, observe it as denied entries, unblock, see it live.
+
+        This is the regression test for the catch-22: in drop mode the blocked
+        IP would vanish and unblock would be unreachable. Under deny_log the IP
+        keeps surfacing (as deny-log lines), so unblock targets it and restores
+        normal delivery.
+        """
+        env = SecurityLogStreamEnv(db_path=single_ip_db, block_visibility="deny_log")
+        obs, info = env.reset()
+        assert info["src_ip"] == "10.9.9.9"
+
+        # Block: the surfaced denied event grades ONLY the consequence term
+        # (action reward suppressed → -0.5, not the -1.0 block-on-benign cost).
+        obs, reward, term, trunc, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert "10.9.9.9" in info["blocked_ips"]
+        assert info["events_dropped"] == 1
+        assert reward == pytest.approx(-0.5)
+        assert DENY_LOG_PREFIX in obs["auth_log"]
+        assert term is False
+
+        # A second denied step: still consequence-only.
+        obs, reward, term, trunc, info = env.step(_make_action(ACTION_PASS))
+        assert reward == pytest.approx(-0.5)
+        assert DENY_LOG_PREFIX in obs["auth_log"]
+
+        # Unblock — the current event IS 10.9.9.9 (surfaced denied), so unblock
+        # targets it. Benign unblock is neutral (0.0) and stops the bleed.
+        obs, reward, term, trunc, info = env.step(_make_action(ACTION_UNBLOCK))
+        assert "10.9.9.9" not in info["blocked_ips"]
+        assert reward == pytest.approx(0.0)
+        # The newly delivered event is live (no deny prefix on the latest line).
+        assert not obs["auth_log"].split("\n")[-1].startswith(DENY_LOG_PREFIX)
+        env.close()
+
+    def test_deny_log_unblock_during_attack_penalized(self, single_ip_malicious_db):
+        """Unblocking while the attack is ongoing is graded -0.5 on the live event."""
+        env = SecurityLogStreamEnv(
+            db_path=single_ip_malicious_db, block_visibility="deny_log",
+        )
+        env.reset()
+        # Block an attacker: denied malicious event yields +malicious_drop_reward.
+        _, reward, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert reward == pytest.approx(0.1)
+        assert "10.9.9.9" in info["blocked_ips"]
+        # Unblock mid-attack: the resurfaced malicious event grades unblock live.
+        _, reward, _, _, info = env.step(_make_action(ACTION_UNBLOCK))
+        assert "10.9.9.9" not in info["blocked_ips"]
+        assert reward == pytest.approx(-0.5)
+        env.close()
+
+    def test_deny_log_render_is_ground_truth_blind(self, single_ip_mixed_db):
+        """The deny prefix is identical for benign and malicious denied events."""
+        env = SecurityLogStreamEnv(
+            db_path=single_ip_mixed_db, block_visibility="deny_log",
+        )
+        env.reset()
+        # Block; the first surfaced denied event is benign ("Accepted").
+        obs, _, _, _, _ = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        benign_line = obs["auth_log"].split("\n")[-1]
+        # Step until a malicious denied event surfaces ("Failed").
+        mal_line = None
+        for _ in range(8):
+            obs, _, _, trunc, _ = env.step(_make_action(ACTION_PASS))
+            last = obs["auth_log"].split("\n")[-1]
+            if "Failed" in last:
+                mal_line = last
+                break
+            if trunc:
+                break
+        assert mal_line is not None
+        assert benign_line.startswith(DENY_LOG_PREFIX)
+        assert mal_line.startswith(DENY_LOG_PREFIX)
+        # Same prefix bytes; only the underlying (legitimately visible) log differs.
+        n = len(DENY_LOG_PREFIX)
+        assert benign_line[:n] == mal_line[:n]
+        assert "Accepted" in benign_line and "Failed" in mal_line
+        env.close()
+
+
+class TestBlockTTL:
+    """fail2ban-style block auto-expiry re-surfaces a blocked IP."""
+
+    def test_block_ttl_auto_resurfaces_after_expiry(self, single_ip_db):
+        """A block lapses after block_ttl event-seconds; the IP re-surfaces live."""
+        # Ban starts at the reset event (t=0). Events at t=1,2,3 are within the
+        # 3.5s ban (dropped); the event at t=4 expires it and is delivered.
+        env = SecurityLogStreamEnv(db_path=single_ip_db, block_ttl=3.5)
+        env.reset()
+        obs, reward, term, trunc, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert info["src_ip"] == "10.9.9.9"
+        assert "10.9.9.9" not in info["blocked_ips"]  # ban expired
+        assert info["events_dropped"] == 3  # t=1,2,3 dropped during the ban
+        # Delivered live (no deny prefix; default drop visibility), graded live.
+        assert DENY_LOG_PREFIX not in obs["auth_log"]
+        assert env._block_times == {}  # entry popped on expiry
+        env.close()
+
+    def test_block_ttl_reblock_uses_fresh_start_time(self, single_ip_db):
+        """Re-blocking the same IP measures expiry from the second block time."""
+        env = SecurityLogStreamEnv(db_path=single_ip_db, block_ttl=2.0)
+        env.reset()  # t=0
+        # Block @ t=0: t=1 dropped, t=2 expires → resurface (events_dropped=1).
+        _, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert info["src_ip"] == "10.9.9.9"
+        assert info["events_dropped"] == 1
+        # Re-block @ t=2 with a FRESH start: t=3 dropped, t=4 expires.
+        # A stale start (t=0) would expire at t=3 immediately (no extra drop).
+        _, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert "10.9.9.9" not in info["blocked_ips"]
+        assert info["events_dropped"] == 2
+        env.close()
+
+    def test_block_ttl_composes_with_deny_log(self, single_ip_db):
+        """TTL + deny_log compose: denied entries during the ban, live after."""
+        env = SecurityLogStreamEnv(
+            db_path=single_ip_db, block_visibility="deny_log", block_ttl=3.5,
+        )
+        env.reset()  # t=0
+        # Within the ban (t=1,2,3): surfaced denied, consequence-only -0.5.
+        for i in range(3):
+            action = ACTION_BLOCK_SOURCE if i == 0 else ACTION_PASS
+            obs, reward, _, _, info = env.step(_make_action(action))
+            assert reward == pytest.approx(-0.5)
+            assert obs["auth_log"].split("\n")[-1].startswith(DENY_LOG_PREFIX)
+        # t=4 expires the ban: delivered live, graded live (pass-benign = 0.0).
+        obs, reward, _, _, info = env.step(_make_action(ACTION_PASS))
+        assert "10.9.9.9" not in info["blocked_ips"]
+        assert not obs["auth_log"].split("\n")[-1].startswith(DENY_LOG_PREFIX)
+        assert reward == pytest.approx(0.0)
+        env.close()
+
+
+class TestBlockBackwardCompat:
+    """Default config preserves the prior permanent-block semantics exactly."""
+
+    def test_drop_mode_observation_byte_identical(self, tmp_db):
+        """No-kwargs env and explicit drop/None env produce identical episodes."""
+        seq = [
+            ACTION_PASS, ACTION_BLOCK_SOURCE, ACTION_PASS, ACTION_PASS,
+            ACTION_ALERT, ACTION_PASS, ACTION_ISOLATE, ACTION_PASS,
+        ]
+
+        def run(env):
+            obs, _ = env.reset(seed=0)
+            text = {ch: obs[ch] for ch in _CHANNELS}
+            frames = [text]
+            rewards = []
+            for a in seq:
+                obs, r, _, trunc, _ = env.step(_make_action(a))
+                frames.append({ch: obs[ch] for ch in _CHANNELS})
+                rewards.append(r)
+                if trunc:
+                    break
+            env.close()
+            return frames, rewards
+
+        f1, r1 = run(SecurityLogStreamEnv(db_path=tmp_db))
+        f2, r2 = run(
+            SecurityLogStreamEnv(db_path=tmp_db, block_visibility="drop", block_ttl=None)
+        )
+        assert f1 == f2
+        assert r1 == r2
+
+    def test_drop_mode_block_is_permanent(self, single_ip_db):
+        """Default mode: a blocked IP never reappears within the episode."""
+        env = SecurityLogStreamEnv(db_path=single_ip_db)
+        env.reset()  # event @ t=0 from 10.9.9.9
+        # Block the only IP: all 7 remaining events are dropped and never
+        # resurface, exhausting the stream on this very step.
+        obs, _, term, trunc, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert term is False
+        assert trunc is True
+        assert info["events_dropped"] == 7
+        assert DENY_LOG_PREFIX not in obs["auth_log"]
         env.close()
 
 

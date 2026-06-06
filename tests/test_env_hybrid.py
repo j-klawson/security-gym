@@ -10,6 +10,8 @@ from security_gym.envs.log_stream_env import (
     ACTION_BLOCK_SOURCE,
     ACTION_THROTTLE,
     ACTION_ISOLATE,
+    ACTION_UNBLOCK,
+    DENY_LOG_PREFIX,
 )
 from security_gym.envs.log_stream_env_hybrid import (
     SecurityLogStreamHybridEnv,
@@ -185,3 +187,39 @@ class TestRewardUnchanged:
 
         env_text.close()
         env_hybrid.close()
+
+
+class TestBlockRecovery:
+    """block_visibility / block_ttl thread through to the hybrid env."""
+
+    def test_hybrid_deny_log_threads_params(self, single_ip_db):
+        """deny_log surfaces a blocked IP in the auth_log TEXT channel.
+
+        The structured eBPF channels carry no deny marker, so the deny-log
+        annotation is asserted on the text channel. This also guards the
+        hybrid-reset trap: _block_times / _current_denied must be initialized.
+        """
+        env = SecurityLogStreamHybridEnv(
+            db_path=str(single_ip_db), block_visibility="deny_log", block_ttl=2.0,
+        )
+        env.reset()
+        obs, reward, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert "10.9.9.9" in info["blocked_ips"]
+        assert DENY_LOG_PREFIX in obs["auth_log"]
+        # Consequence-only reward (action suppressed on the denied step).
+        assert reward == pytest.approx(-0.5)
+        # Unblock restores normal delivery (state survives across the hybrid path).
+        obs, reward, _, _, info = env.step(_make_action(ACTION_UNBLOCK))
+        assert "10.9.9.9" not in info["blocked_ips"]
+        env.close()
+
+    def test_hybrid_default_drop_unchanged(self, single_ip_db):
+        """Default hybrid env keeps permanent-block semantics (no deny prefix)."""
+        env = SecurityLogStreamHybridEnv(db_path=str(single_ip_db))
+        env.reset()
+        obs, _, term, trunc, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert term is False
+        assert trunc is True  # single IP blocked → stream exhausts
+        assert info["events_dropped"] == 7
+        assert DENY_LOG_PREFIX not in obs["auth_log"]
+        env.close()

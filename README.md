@@ -93,6 +93,17 @@ Dict({
 
 IP-targeted actions use the current event's source IP. The agent can escalate and de-escalate: throttle -> block -> unblock.
 
+### Block recovery (opt-in, default-off)
+
+By default a blocked IP's events are dropped 100% and never reappear within an episode, so an `unblock` directed at it is unreachable (the IP is no longer observable). Two composable constructor parameters make the block then unblock loop learnable:
+
+- `block_visibility="deny_log"` (default `"drop"`): a blocked IP's events are still dropped by the firewall, but each is surfaced in the observation as a ground-truth-blind `"[FIREWALL DENY] "` line. The agent can see a wrongly-blocked benign IP still active and `unblock` it (the deny line makes that IP the current event), or see an attacker go quiet and leave it blocked. The deny rendering never encodes `is_malicious`, so no label leaks into the observation.
+- `block_ttl=<seconds>` (default `None`): fail2ban-style auto-expiry. A block lapses after `block_ttl` event-seconds; the IP re-surfaces for a fresh decision.
+
+```python
+env = gym.make("SecurityLogStream-Text-v0", db_path=..., block_visibility="deny_log", block_ttl=300.0)
+```
+
 ## Reward Function
 
 Two components by default (an action term and ongoing consequences), plus an optional risk-score term:
@@ -111,6 +122,8 @@ Two components by default (an action term and ongoing consequences), plus an opt
 **Risk score MSE** (optional, *disabled by default*; enable via `reward_config={"include_risk_reward": True}`): `-0.1 * (predicted_risk - true_risk)^2` — penalizes inaccurate threat assessment. It is off by default because, as a per-event term that accumulates against every observed event, it can make observation-suppressing actions (block/throttle/isolate) rationally dominant.
 
 **Ongoing consequences**: blocked/throttled events accumulate reward between steps (+0.1 per blocked attack event, -0.5 per blocked benign event). The agent feels the sustained cost of false positives.
+
+Under `block_visibility="deny_log"`, a surfaced deny-log entry contributes *only* the consequence term: the per-step action and risk terms are zeroed so the event is not double-counted (the firewall, not the agent's live decision, is acting on it). The agent's action on a denied event is graded on the next live event it produces. Episode-total consequence reward is unchanged from `"drop"` mode; `"deny_log"` only redistributes it across steps (one step per blocked event) and lengthens the episode.
 
 ## Supported Attacks
 

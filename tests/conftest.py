@@ -305,6 +305,94 @@ def empty_db(tmp_path):
     return db_path
 
 
+# ── Single-IP streams (block_visibility / block_ttl tests) ────────────
+
+
+def _make_single_ip_events(
+    ip: str = "10.9.9.9",
+    n: int = 8,
+    is_malicious: int = 0,
+    start: int = 0,
+) -> list[tuple[ParsedEvent, dict | None]]:
+    """Build ``n`` auth_log events all from ``ip``, one event-second apart.
+
+    Single source IP and 1s spacing make the block→unblock loop and block_ttl
+    expiry deterministic and easy to assert. ``start`` offsets the timestamps
+    (event-seconds) so segments can be concatenated for mixed-label streams.
+    """
+    events: list[tuple[ParsedEvent, dict | None]] = []
+    campaign_id = str(uuid4())
+    for i in range(n):
+        sec = start + i
+        if is_malicious:
+            raw = (
+                f"Feb 17 10:{sec // 60:02d}:{sec % 60:02d} myhost sshd[200]: "
+                f"Failed password for root from {ip} port 6{i:04d} ssh2"
+            )
+            gt: dict | None = {
+                "is_malicious": 1,
+                "campaign_id": campaign_id,
+                "attack_type": "brute_force",
+                "attack_stage": "initial_access",
+                "severity": 2,
+            }
+            event_type, username = "auth_failure", "root"
+        else:
+            raw = (
+                f"Feb 17 10:{sec // 60:02d}:{sec % 60:02d} myhost sshd[100]: "
+                f"Accepted password for admin from {ip} port 5{i:04d} ssh2"
+            )
+            gt = {"is_malicious": 0, "severity": 0}
+            event_type, username = "auth_success", "admin"
+        events.append((
+            ParsedEvent(
+                timestamp=_base_time + timedelta(seconds=sec),
+                source="auth_log",
+                raw_line=raw,
+                event_type=event_type,
+                fields={"event_type": event_type, "auth_method": "password"},
+                src_ip=ip,
+                username=username,
+                service="sshd",
+                session_id=f"{ip}:{50000 + sec}",
+            ),
+            gt,
+        ))
+    return events
+
+
+def _write_db(tmp_path, name: str, events: list[tuple[ParsedEvent, dict | None]]):
+    db_path = tmp_path / name
+    store = EventStore(db_path, mode="w")
+    for event, gt in events:
+        store.insert_event(event, gt)
+    store.flush()
+    store.close()
+    return db_path
+
+
+@pytest.fixture
+def single_ip_db(tmp_path):
+    """8 benign auth_log events from 10.9.9.9 at t=0..7s (one IP, 1s apart)."""
+    return _write_db(tmp_path, "single_ip.db", _make_single_ip_events(is_malicious=0))
+
+
+@pytest.fixture
+def single_ip_malicious_db(tmp_path):
+    """8 malicious auth_log events from 10.9.9.9 at t=0..7s."""
+    return _write_db(
+        tmp_path, "single_ip_mal.db", _make_single_ip_events(is_malicious=1),
+    )
+
+
+@pytest.fixture
+def single_ip_mixed_db(tmp_path):
+    """Same IP (10.9.9.9): 4 benign (t=0..3s) then 4 malicious (t=4..7s)."""
+    events = _make_single_ip_events(n=4, is_malicious=0, start=0)
+    events += _make_single_ip_events(n=4, is_malicious=1, start=4)
+    return _write_db(tmp_path, "single_ip_mixed.db", events)
+
+
 def _make_multi_source_events() -> list[tuple[ParsedEvent, dict | None]]:
     """Create events from multiple log sources for integration tests."""
     events = []

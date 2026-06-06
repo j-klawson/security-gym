@@ -24,6 +24,16 @@ DEFAULT_TAIL_LINES = 500
 DEFAULT_MAX_CHARS = 50_000
 DEFAULT_THROTTLE_DROP_RATE = 0.9
 
+# Block visibility modes (governs how a blocked IP's events are handled)
+BLOCK_VISIBILITY_DROP = "drop"          # default: 100% invisible (legacy behavior)
+BLOCK_VISIBILITY_DENY_LOG = "deny_log"  # surface as firewall deny-log entries
+_VALID_BLOCK_VISIBILITY = (BLOCK_VISIBILITY_DROP, BLOCK_VISIBILITY_DENY_LOG)
+
+# Prefix applied to a blocked IP's surfaced events under deny_log visibility.
+# Ground-truth-blind: identical for benign and malicious events, so it leaks
+# no is_malicious signal into the observation (models a real firewall deny-log).
+DENY_LOG_PREFIX = "[FIREWALL DENY] "
+
 # Action indices
 ACTION_PASS = 0
 ACTION_ALERT = 1
@@ -92,6 +102,36 @@ class SecurityLogStreamEnv(gymnasium.Env):
 
     There are no MDP terminal states — ``terminated`` is always ``False``.
     ``truncated`` becomes ``True`` when the event stream is exhausted.
+
+    Block recovery (opt-in, default-off; both compose):
+
+    - ``block_visibility`` controls how a blocked IP's events are handled.
+      ``"drop"`` (default) makes them 100% invisible for the rest of the
+      episode (legacy behavior). ``"deny_log"`` keeps the firewall drop (the
+      events still do not reach the server, so the consequence reward still
+      fires) but *surfaces* each blocked event in the observation as a
+      ground-truth-blind firewall deny-log line (prefixed ``DENY_LOG_PREFIX``).
+      This lets the agent see a wrongly-blocked benign IP still hammering and
+      issue an ``unblock`` on it (``unblock`` targets the current event's
+      ``src_ip``), making the block→unblock loop reachable. ``block_visibility``
+      governs only the 100%-block path, not isolation or throttle.
+
+    - ``block_ttl`` (event-time seconds, ``None`` = permanent) auto-expires a
+      block fail2ban-style: once ``block_ttl`` seconds of event-time have
+      elapsed since the ban started, the IP is removed from the blocklist and
+      its next event re-surfaces for a fresh decision.
+
+    Reward/step accounting under ``deny_log``: when the current observation is
+    a surfaced deny-log entry, the firewall (not the agent's live decision) is
+    acting on that event, so the per-step action reward and risk term are zero
+    and the event contributes only the consequence term
+    (``+malicious_drop_reward`` / ``-benign_drop_penalty``). This avoids
+    double-counting a single event under both the consequence and action terms.
+    The agent's action on a denied event (e.g. ``unblock``) is graded on the
+    next *live* event it produces. Consequence reward over an episode is
+    identical to ``drop`` mode; ``deny_log`` only redistributes it across steps
+    (one step per blocked event instead of accumulating into one) and increases
+    episode length accordingly.
     """
 
     metadata = {"render_modes": ["ansi"]}
@@ -104,6 +144,8 @@ class SecurityLogStreamEnv(gymnasium.Env):
         throttle_drop_rate: float = DEFAULT_THROTTLE_DROP_RATE,
         reward_config: dict[str, Any] | None = None,
         render_mode: str | None = None,
+        block_visibility: str = BLOCK_VISIBILITY_DROP,
+        block_ttl: float | None = None,
     ):
         super().__init__()
         self.db_path = Path(db_path)
@@ -111,6 +153,15 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self.max_chars = max_chars
         self.throttle_drop_rate = throttle_drop_rate
         self.render_mode = render_mode
+
+        # Block-recovery configuration (opt-in; defaults preserve legacy semantics)
+        if block_visibility not in _VALID_BLOCK_VISIBILITY:
+            raise ValueError(
+                f"block_visibility must be one of {_VALID_BLOCK_VISIBILITY}, "
+                f"got {block_visibility!r}"
+            )
+        self.block_visibility = block_visibility
+        self.block_ttl = float(block_ttl) if block_ttl is not None else None
 
         # Optional reward weight overrides
         self._reward_config = reward_config or {}
@@ -161,6 +212,13 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self._is_isolated: bool = False
         self._events_dropped: int = 0
 
+        # Per-IP ban start timestamp (event-time), for block_ttl expiry
+        self._block_times: dict[str, datetime] = {}
+
+        # Whether the current observation is a surfaced firewall deny-log entry
+        # (deny_log visibility). Drives the reward double-count suppression.
+        self._current_denied: bool = False
+
         # Ongoing consequence accumulator for blocked/throttled events
         self._ongoing_reward: float = 0.0
 
@@ -201,10 +259,16 @@ class SecurityLogStreamEnv(gymnasium.Env):
         """Advance to next visible event, applying blocklist/throttle/isolation.
 
         Skipped events contribute to ongoing_reward (consequence feedback).
+
+        Sets ``self._current_denied`` for every event returned: ``True`` only
+        when a blocked IP's event is surfaced under ``deny_log`` visibility,
+        ``False`` otherwise (including the exhaustion ``None`` return). The flag
+        drives the reward double-count suppression in ``_compute_reward``.
         """
         while True:
             row = self._next_raw_row()
             if row is None:
+                self._current_denied = False
                 return None
 
             src_ip = row.get("src_ip")
@@ -219,11 +283,24 @@ class SecurityLogStreamEnv(gymnasium.Env):
                 self._accumulate_consequence(row)
                 continue
 
-            # Check blocklist — 100% drop
+            # Blocklist handling, with optional fail2ban-style TTL expiry.
             if src_ip and src_ip in self._blocked_ips:
-                self._events_dropped += 1
-                self._accumulate_consequence(row)
-                continue
+                if self._block_expired(src_ip, row):
+                    # Ban lapsed: release the IP and deliver this event live.
+                    self._blocked_ips.discard(src_ip)
+                    self._block_times.pop(src_ip, None)
+                else:
+                    self._events_dropped += 1
+                    self._accumulate_consequence(row)
+                    if self.block_visibility == BLOCK_VISIBILITY_DENY_LOG:
+                        # Firewall still drops the event (consequence reward
+                        # fired above), but it stays observable as a deny-log
+                        # line so the agent can react (e.g. unblock the IP).
+                        row["raw_line"] = self._render_denied_line(row)
+                        self._current_denied = True
+                        return row
+                    # Default "drop" visibility: 100% invisible.
+                    continue
 
             # Check throttle list — probabilistic drop
             if src_ip and src_ip in self._throttled_ips:
@@ -232,7 +309,31 @@ class SecurityLogStreamEnv(gymnasium.Env):
                     self._accumulate_consequence(row)
                     continue
 
+            self._current_denied = False
             return row
+
+    def _block_expired(self, src_ip: str, row: dict[str, Any]) -> bool:
+        """Whether ``src_ip``'s ban has lapsed by ``block_ttl`` event-seconds.
+
+        Returns ``False`` when no TTL is configured or no ban start time is
+        recorded. Compares the candidate row's own timestamp against the ban
+        start time stamped in ``_apply_action``.
+        """
+        if self.block_ttl is None:
+            return False
+        start = self._block_times.get(src_ip)
+        if start is None:
+            return False
+        return (self._parse_timestamp(row) - start).total_seconds() >= self.block_ttl
+
+    def _render_denied_line(self, row: dict[str, Any]) -> str:
+        """Render a blocked event as a ground-truth-blind firewall deny-log line.
+
+        A pure function of agent-observable fields (a static prefix plus the
+        original raw line). It never references is_malicious, attack_type, or
+        attack_stage, so the surfaced observation leaks no label.
+        """
+        return f"{DENY_LOG_PREFIX}{row.get('raw_line', '')}"
 
     def _accumulate_consequence(self, row: dict[str, Any]) -> None:
         """Accumulate ongoing reward/penalty for dropped events."""
@@ -291,23 +392,37 @@ class SecurityLogStreamEnv(gymnasium.Env):
         action_dict: dict[str, Any],
         ground_truth: dict[str, Any],
     ) -> float:
-        """Compute combined reward: action + risk_score MSE + ongoing consequences."""
+        """Compute combined reward: action + risk_score MSE + ongoing consequences.
+
+        When the current observation is a surfaced firewall deny-log entry
+        (``self._current_denied``), the firewall, not the agent's live decision,
+        is acting on that event. The action and risk terms are zeroed so the
+        event contributes only the consequence term, avoiding double-counting it
+        under both the consequence reward (accrued when it was dropped) and the
+        per-step action reward. The agent's action on a denied event is graded
+        on the next live event it produces.
+        """
         action = int(action_dict["action"])
         risk_pred = float(action_dict["risk_score"][0])
 
-        # 1. Action reward (asymmetric)
-        is_mal = ground_truth["is_malicious"]
-        if is_mal:
-            action_reward: float = _ATTACK_REWARDS.get(action, 0.0)
-        else:
-            action_reward = _BENIGN_REWARDS.get(action, 0.0)
-
-        # 2. Risk score reward (negative MSE)
-        true_risk = float(ground_truth["true_risk"])
-        if self._include_risk_reward:
-            risk_reward = -self._risk_weight * (risk_pred - true_risk) ** 2
-        else:
+        if self._current_denied:
+            # Denied (surfaced-blocked) step: only the consequence term applies.
+            action_reward = 0.0
             risk_reward = 0.0
+        else:
+            # 1. Action reward (asymmetric)
+            is_mal = ground_truth["is_malicious"]
+            if is_mal:
+                action_reward = _ATTACK_REWARDS.get(action, 0.0)
+            else:
+                action_reward = _BENIGN_REWARDS.get(action, 0.0)
+
+            # 2. Risk score reward (negative MSE)
+            true_risk = float(ground_truth["true_risk"])
+            if self._include_risk_reward:
+                risk_reward = -self._risk_weight * (risk_pred - true_risk) ** 2
+            else:
+                risk_reward = 0.0
 
         # 3. Ongoing consequence reward (from dropped events since last step)
         consequence_reward = self._ongoing_reward
@@ -323,9 +438,15 @@ class SecurityLogStreamEnv(gymnasium.Env):
             self._throttled_ips.add(src_ip)
         elif action == ACTION_BLOCK_SOURCE and src_ip:
             self._blocked_ips.add(src_ip)
+            # Stamp (or restamp) the ban start time for block_ttl expiry. At
+            # this point _prev_timestamp is the time of the event being acted
+            # on, the correct fail2ban "ban start" anchor.
+            if self._prev_timestamp is not None:
+                self._block_times[src_ip] = self._prev_timestamp
         elif action == ACTION_UNBLOCK and src_ip:
             self._blocked_ips.discard(src_ip)
             self._throttled_ips.discard(src_ip)
+            self._block_times.pop(src_ip, None)
         elif action == ACTION_ISOLATE:
             self._is_isolated = True
 
@@ -379,6 +500,8 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self._is_isolated = False
         self._events_dropped = 0
         self._ongoing_reward = 0.0
+        self._block_times = {}
+        self._current_denied = False
 
         # Seed throttle RNG
         self._throttle_rng = np.random.default_rng(seed)

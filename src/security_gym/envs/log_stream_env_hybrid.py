@@ -23,6 +23,7 @@ from security_gym.envs.ebpf_encoding import (
     extract_process_row,
 )
 from security_gym.envs.log_stream_env import (
+    BLOCK_VISIBILITY_DROP,
     SecurityLogStreamEnv,
     _SOURCE_TO_CHANNEL,
 )
@@ -61,6 +62,14 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         throttle_drop_rate: Probability of dropping throttled events.
         reward_config: Optional reward weight overrides.
         render_mode: Gymnasium render mode.
+        block_visibility: "drop" (default) or "deny_log". See base class.
+            Note: a denied eBPF event still drops/consequence-rewards correctly,
+            but the structured eBPF channels carry no deny-log marker (no
+            raw_line, no spare column), so the deny annotation is visible only
+            in the text channels. Most blockable entities (auth/network events)
+            are surfaced as text.
+        block_ttl: Optional fail2ban-style block auto-expiry in event-seconds.
+            See base class.
     """
 
     def __init__(
@@ -72,6 +81,8 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         throttle_drop_rate: float = 0.9,
         reward_config: dict[str, Any] | None = None,
         render_mode: str | None = None,
+        block_visibility: str = BLOCK_VISIBILITY_DROP,
+        block_ttl: float | None = None,
     ):
         self.tail_events = tail_events
 
@@ -82,6 +93,8 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
             throttle_drop_rate=throttle_drop_rate,
             reward_config=reward_config,
             render_mode=render_mode,
+            block_visibility=block_visibility,
+            block_ttl=block_ttl,
         )
 
         # Rebuild observation space with structured eBPF channels
@@ -228,12 +241,15 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         self._prev_timestamp = None
         self._init_buffers()
 
-        # Reset defense state
+        # Reset defense state (mirror base reset; this method is duplicated and
+        # does NOT call SecurityLogStreamEnv.reset, so new state must be reset here)
         self._blocked_ips = set()
         self._throttled_ips = set()
         self._is_isolated = False
         self._events_dropped = 0
         self._ongoing_reward = 0.0
+        self._block_times = {}
+        self._current_denied = False
 
         # Seed throttle RNG
         self._throttle_rng = np.random.default_rng(seed)
