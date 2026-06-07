@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Scoped the CI dependency audit to the project closure
+
+The `security` CI job's `pip-audit` step audited the entire job environment, which includes the audit tooling itself (pip, and pip-audit's own `requests`/`urllib3`/`idna`/`pygments` transitive dependencies). Newly disclosed advisories in that tooling (none in security-gym's runtime dependencies: `gymnasium`, `numpy`, `mmh3`, `pyyaml`) were failing CI even though they are not shipped by the package. The step now resolves the project's `[dev]` dependency closure in a clean virtual environment and audits that requirements set, so the audit reflects what security-gym actually ships. The `[dev]` pin for `pytest` is raised to `>=9.0.3` to clear CVE-2025-71176 (which also pulls the fixed `pygments` 2.20.0). No library code changed.
+
 ## 0.5.0
 
 ### Added opt-in block recovery: `block_visibility` and `block_ttl`

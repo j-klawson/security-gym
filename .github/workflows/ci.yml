@@ -43,8 +43,18 @@ jobs:
           pip install -e ".[dev]"
           pip install pip-audit bandit
       - name: Audit dependencies
-        # CVE-2026-3219 affects pip itself with no fix version published.
-        # Revisit and drop --ignore-vuln once an upstream fix lands.
-        run: pip-audit --skip-editable --ignore-vuln CVE-2026-3219
+        # Audit only security-gym's declared dependency closure, not the CI
+        # tooling. pip-audit must be installed alongside the project to run, so
+        # auditing the ambient environment also flags advisories in the audit
+        # tooling itself (pip, and pip-audit's own requests/urllib3/idna/pygments
+        # transitive deps) that security-gym does not ship. Resolve the project's
+        # [dev] closure in a clean venv and audit that requirements set instead.
+        run: |
+          python -m venv /tmp/audit-venv
+          /tmp/audit-venv/bin/pip install --quiet --upgrade pip
+          /tmp/audit-venv/bin/pip install --quiet ".[dev]"
+          /tmp/audit-venv/bin/pip freeze --exclude-editable \
+            | grep -iv '^security[-_]gym' > /tmp/audit-reqs.txt
+          pip-audit --requirement /tmp/audit-reqs.txt
       - name: Static security analysis
         run: bandit -r src/ -c pyproject.toml
