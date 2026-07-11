@@ -1,0 +1,43 @@
+# Recovered benchmark output: full-stream rule-based baseline run (Set B source)
+#
+# Recovered from : /home/keith/repos/research/rlsecd/logs/benchmark_ruleagents_v4_30d.log
+# File mtime     : 2026-05-28 12:00:47.546249350 -0400
+# SHA256 (source): 6766545e16357bdbf17bf8d97b790825878130f5874813125a570e4b640a9a62
+# Recovered on   : 2026-07-11, RLC 2026 camera-ready item C11 provenance validation
+#
+# Reconstructed command line (see C11_VALIDATION_20260711.md, section 4.2):
+#   cd /home/keith/repos/research/security-gym
+#   /home/keith/repos/research/rlsecd/.venv/bin/python examples/benchmark.py \
+#     data/exp_30d_heavy_v4.db > /home/keith/repos/research/rlsecd/logs/benchmark_ruleagents_v4_30d.log 2>&1
+#   (no --max-steps: the log contains no "Max steps:" line, and the pass-only agent
+#    ran 21,511,208 steps, the full exp_30d_heavy_v4.db stream; no --seed evidence,
+#    argparse default seed=42 assumed)
+#
+# Run window: 2026-05-28 08:27:55 EDT (examples/__pycache__ bytecode write on first
+# import) to 12:00:47 EDT (log mtime). Sum of per-agent elapsed times printed in the
+# log is 12,772.1 s = 3 h 32 m 52 s, which matches the window exactly.
+#
+# Verbatim content of the source file follows the separator line.
+# ----------------------------------------------------------------------
+/home/keith/repos/research/rlsecd/.venv/lib/python3.13/site-packages/gymnasium/utils/passive_env_checker.py:158: UserWarning: [33mWARN: The obs returned by the `step()` method is not within the observation space.[0m
+  logger.warn(f"{pre} is not within the observation space.")
+Benchmarking on: data/exp_30d_heavy_v4.db
+
+Running pass-only agent ...
+  done (2009.5s)
+Running random agent ...
+  done (1371.0s)
+Running threshold agent (t=5) ...
+  done (7240.1s)
+Running keyword heuristic agent ...
+  done (2151.5s)
+
+======================Baseline Results======================
+
+| Agent | Steps | Mean Reward | Precision | Recall | F1 | evt/s |
+|-------|------:|------------:|----------:|-------:|---:|------:|
+| pass-only | 21,511,208 | -0.1116 | 0.0000 | 0.0000 | 0.0000 | 10,705 |
+| random | 19,971,741 | -3.9781 | 0.0036 | 0.6652 | 0.0072 | 14,568 |
+| threshold(t=5,w=300) | 21,123,665 | -0.0771 | 1.0000 | 0.0001 | 0.0002 | 2,918 |
+| keyword(a=2.0,b=5.0) | 21,502,107 | -0.1114 | 0.9816 | 0.0092 | 0.0183 | 9,994 |
+
