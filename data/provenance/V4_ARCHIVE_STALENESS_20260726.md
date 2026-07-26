@@ -121,3 +121,31 @@ All `.zst` archives in `data/` were deleted on 2026-07-26 after the measurements
 4. When assembling the corrected deposit, hash-verify `benign_v4.db.zst` and `campaigns_v2.db.zst` against the published copies as well, since the local evidence for their freshness (E8) is now unrecoverable.
 5. `data/croissant.json` carries `"sha256": "TBD"` placeholders for six file entries; fill them from the regenerated archives at re-release.
 6. Audit downstream use: any third-party experiment that downloaded the published 7d, 30d, or 90d v4 archives operated on 3 to 5% of the intended streams.
+
+## 9. Remediation (2026-07-26)
+
+Executed on hopper on the afternoon of 2026-07-26 (EDT), the same day as the validation above. Tools: zstd 1.5.7 (`zstd -T0 -19 --long=27`), SQLite 3.46.1.
+
+### 9.1 Regenerated archives
+
+The three stale archives were recompressed from the live v4 databases in `data/`. Each fresh archive was round-trip verified before acceptance: decompressed in full to a temporary file, queried with `SELECT count(*), max(id) FROM events`, compared against the live-database values of Section 3.4, and the temporary copy deleted. All three match exactly (4,891,541 / 21,511,208 / 63,212,997 events; `max(id)` equal to the count in each case).
+
+| Archive | Size (bytes) | MD5 | SHA-256 |
+|---------|-------------:|-----|---------|
+| exp_7d_brute_v4.db.zst | 163,895,433 | 338a73eced346420ceea1eab9b3cce94 | d06590723dea52c4e3f8776c6af841c78ff9fd35ea41c49be2137c68cfe7c652 |
+| exp_30d_heavy_v4.db.zst | 719,156,975 | 0494284aec6f3f7b3440e3a39ae13b1d | 4e903e2ba8d50945070c23109079388fa318db8f995ce1c3958e1447082f8824 |
+| exp01_90d_v4.db.zst | 2,122,545,681 | 61c9df3a3ea29f3c96a30e805f063e16 | 0749e549aa377680c4204fe329ddd1ce0d9d0bb80c751c53b0b5f560448a433d |
+
+The fresh archives are 18x, 10.7x, and 17.5x the size of their stale counterparts (Section 3.1), consistent with the stale copies containing 2.9 to 5.1% of the intended event volume. This closes follow-up item 1 (Section 8).
+
+### 9.2 Verification of the published base archives
+
+Follow-up item 4 is also closed. `benign_v4.db.zst` and `campaigns_v2.db.zst` were downloaded from Zenodo record 19482383, and each matched the deposit MD5 (97d9078a84850b1f7dcd86311c21fd43 and cf5cda14876b2c8a16258a1afd62c2c6 respectively). Both were then content-verified by full decompression and event count against the live databases: benign_v4 contains 11,159,241 events and campaigns_v2 contains 60,468 events, both matching their live counterparts exactly. The published base archives are therefore genuine, upgrading the earlier mtime-only evidence (E8) to content-level proof. Their SHA-256 values, computed here for `croissant.json`, are a8fc9447f6f754474497d08e5b8e54a29de1e53e59976610958d8fafe3718b3d (benign_v4) and 1ddf8f09cf54ebf53563782006c625f191250c1240c6f0c86fb64dd6487ff53e (campaigns_v2). The downloaded archives are retained in `data/` as verified copies of the published artifacts.
+
+### 9.3 Metadata corrections
+
+`data/croissant.json` now carries real checksums for all six distribution entries (follow-up item 5 closed): fresh size, MD5, and SHA-256 for the three regenerated archives; the published SHA-256 and MD5 for the 365d archive (Section 3.2); and the deposit MD5 plus newly computed SHA-256 for the two base archives. `data/DATASET_README.md` compressed-size figures were updated to the fresh archive sizes (156 MB / 686 MB / 2.0 GB; HuggingFace mirror total now approximately 2.8 GB).
+
+### 9.4 Publication status
+
+Remaining steps, tracked in TODO.md: replace the three stale LFS objects on HuggingFace (`j-klawson/security-gym-v4`) with the regenerated archives and upload the corrected `croissant.json` and dataset card; publish a corrected Zenodo version under the concept DOI 10.5281/zenodo.18901627 carrying over the four verified files and the three fresh archives; complete the deferred 365d decompress-and-count (follow-up item 3); update version-DOI citations; audit downstream consumers (follow-up item 6).

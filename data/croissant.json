@@ -217,30 +217,33 @@
       "@id": "exp_7d_brute_v4.db.zst",
       "name": "exp_7d_brute_v4.db.zst",
       "description": "7-day SSH brute-force smoke-test stream: 4,891,541 events (25,980 malicious). Decompressed: 1.9 GB SQLite database.",
-      "contentSize": "8902418",
+      "contentSize": "163895433",
       "contentUrl": "https://huggingface.co/datasets/j-klawson/security-gym-v4/resolve/main/exp_7d_brute_v4.db.zst",
       "encodingFormat": "application/zstd",
-      "sha256": "TBD"
+      "md5": "338a73eced346420ceea1eab9b3cce94",
+      "sha256": "d06590723dea52c4e3f8776c6af841c78ff9fd35ea41c49be2137c68cfe7c652"
     },
     {
       "@type": "cr:FileObject",
       "@id": "exp_30d_heavy_v4.db.zst",
       "name": "exp_30d_heavy_v4.db.zst",
       "description": "30-day default benchmark stream: 21,511,208 events (609,520 malicious) with uniform 0.20 mix of discovery, brute_force, web_exploit, credential_stuffing, execution at 10.0 campaigns/day. Decompressed: 8.5 GB SQLite database.",
-      "contentSize": "67038936",
+      "contentSize": "719156975",
       "contentUrl": "https://huggingface.co/datasets/j-klawson/security-gym-v4/resolve/main/exp_30d_heavy_v4.db.zst",
       "encodingFormat": "application/zstd",
-      "sha256": "TBD"
+      "md5": "0494284aec6f3f7b3440e3a39ae13b1d",
+      "sha256": "4e903e2ba8d50945070c23109079388fa318db8f995ce1c3958e1447082f8824"
     },
     {
       "@type": "cr:FileObject",
       "@id": "exp01_90d_v4.db.zst",
       "name": "exp01_90d_v4.db.zst",
       "description": "90-day eBPF feature ablation stream: 63,212,997 events (549,787 malicious) with discovery 0.35, brute_force 0.30, web_exploit 0.20, credential_stuffing 0.10, execution 0.05 distribution at 3.0 campaigns/day. Decompressed: 25 GB SQLite database. Used in the \u00a76.3 30-seed eBPF ablation (Cohen's d=2.577).",
-      "contentSize": "121631440",
+      "contentSize": "2122545681",
       "contentUrl": "https://huggingface.co/datasets/j-klawson/security-gym-v4/resolve/main/exp01_90d_v4.db.zst",
       "encodingFormat": "application/zstd",
-      "sha256": "TBD"
+      "md5": "61c9df3a3ea29f3c96a30e805f063e16",
+      "sha256": "0749e549aa377680c4204fe329ddd1ce0d9d0bb80c751c53b0b5f560448a433d"
     },
     {
       "@type": "cr:FileObject",
@@ -250,7 +253,8 @@
       "contentSize": "13683361323",
       "contentUrl": "https://zenodo.org/records/19482383/files/exp_365d_realistic_v4.db.zst",
       "encodingFormat": "application/zstd",
-      "sha256": "TBD"
+      "md5": "1392292d134f3871bbf20bb12e14dd7e",
+      "sha256": "ff0e5923dc34f97c874a3661e14264df27e652a52913fe28280e79f081fef220"
     },
     {
       "@type": "cr:FileObject",
@@ -260,7 +264,8 @@
       "contentSize": "454519591",
       "contentUrl": "https://zenodo.org/records/19482383/files/benign_v4.db.zst",
       "encodingFormat": "application/zstd",
-      "sha256": "TBD"
+      "md5": "97d9078a84850b1f7dcd86311c21fd43",
+      "sha256": "a8fc9447f6f754474497d08e5b8e54a29de1e53e59976610958d8fafe3718b3d"
     },
     {
       "@type": "cr:FileObject",
@@ -270,7 +275,8 @@
       "contentSize": "4392329",
       "contentUrl": "https://zenodo.org/records/19482383/files/campaigns_v2.db.zst",
       "encodingFormat": "application/zstd",
-      "sha256": "TBD"
+      "md5": "cf5cda14876b2c8a16258a1afd62c2c6",
+      "sha256": "1ddf8f09cf54ebf53563782006c625f191250c1240c6f0c86fb64dd6487ff53e"
     }
   ],
   "recordSet": [

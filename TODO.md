@@ -4,15 +4,15 @@ Current action items for security-gym development.
 
 ## V4 Published-Archive Remediation (2026-07-26)
 
-Read-only validation on hopper (report: `data/provenance/V4_ARCHIVE_STALENESS_20260726.md`, commit 842a3c3) proved the 7d/30d/90d stream archives published to Zenodo 10.5281/zenodo.19482383 and HuggingFace `j-klawson/security-gym-v4` are stale morning-of-2026-03-22 compositions (140,315 / 1,103,255 / 1,996,031 events versus the live 4,891,541 / 21,511,208 / 63,212,997). The 365d archive is very likely genuine. Live DBs are correct; local `.zst` archives were deleted after measurement.
+Read-only validation on hopper (report: `data/provenance/V4_ARCHIVE_STALENESS_20260726.md`, commit 842a3c3) proved the 7d/30d/90d stream archives published to Zenodo 10.5281/zenodo.19482383 and HuggingFace `j-klawson/security-gym-v4` are stale morning-of-2026-03-22 compositions (140,315 / 1,103,255 / 1,996,031 events versus the live 4,891,541 / 21,511,208 / 63,212,997). The 365d archive is very likely genuine. Live DBs are correct. Remediation executed 2026-07-26 (report Section 9): all three archives regenerated from the live DBs with `zstd -T0 -19 --long=27` and round-trip verified (decompress-and-count, exact match); published `benign_v4.db.zst`/`campaigns_v2.db.zst` downloaded from Zenodo, MD5-matched, content-verified, and retained in `data/`; `croissant.json` now carries real checksums for all six entries.
 
 - [x] Validate the staleness claim end-to-end on local disk (hashes vs Zenodo MD5 + HF LFS SHA-256; decompress-and-count vs live DBs; filesystem timeline)
-- [ ] Recompress 7d/30d/90d archives from the live v4 DBs; verify each by decompress-and-count (expect 4,891,541 / 21,511,208 / 63,212,997 events) before upload
-- [ ] Publish corrected dataset version under concept DOI 10.5281/zenodo.18901627 (new version DOI superseding 19482383)
-- [ ] Replace the three stale LFS objects in HuggingFace `j-klawson/security-gym-v4`
+- [x] Recompress 7d/30d/90d archives from the live v4 DBs; verify each by decompress-and-count (expect 4,891,541 / 21,511,208 / 63,212,997 events) before upload (2026-07-26; fresh sizes 163,895,433 / 719,156,975 / 2,122,545,681 bytes; hashes in provenance report Section 9.1)
+- [ ] Publish corrected dataset version under concept DOI 10.5281/zenodo.18901627 (new version DOI superseding 19482383): web UI → New version of record 19482383, carry over the four verified files (365d, benign_v4, campaigns_v2, DATASET_README), upload the three fresh archives + updated DATASET_README.md, publish, note new version DOI
+- [ ] Replace the three stale LFS objects in HuggingFace `j-klawson/security-gym-v4`; upload corrected `croissant.json` and dataset card README
 - [ ] Verify the published 365d archive by full decompress-and-count (from the Zenodo copy or a fresh recompress of the live DB; expect 257,654,256 events, max timestamp 2014-01-01T01:49:45.161295-05:00)
-- [ ] Hash-verify `benign_v4.db.zst` and `campaigns_v2.db.zst` against the published deposit when assembling the corrected release (local freshness evidence was mtime-only and the archives are gone)
-- [ ] Fill the six `"sha256": "TBD"` placeholders in `data/croissant.json` from the regenerated archives
+- [x] Hash-verify `benign_v4.db.zst` and `campaigns_v2.db.zst` against the published deposit when assembling the corrected release (2026-07-26: downloaded from Zenodo, MD5 match, decompress-and-count match — 11,159,241 / 60,468 events; verified copies kept in `data/`)
+- [x] Fill the six `"sha256": "TBD"` placeholders in `data/croissant.json` from the regenerated archives (2026-07-26; also corrected `contentSize` for the three regenerated entries)
 - [ ] Update version-DOI citations (README, CITATION.cff, DATASET_README.md, paper drafts) to the corrected version DOI
 - [ ] Audit downstream consumers of the published 7d/30d/90d archives (they received 3–5% of the intended streams)
 
