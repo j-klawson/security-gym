@@ -200,7 +200,7 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
   - exp01_90d_v4.db: 63.2M events (62.7M benign, 550K malicious), 25GB
   - exp_365d_realistic_v4.db: 257.7M events (255.8M benign, 1.86M malicious), 101GB
 - [x] Update CLAUDE.md with new eBPF event counts
-- [ ] Publish v4 dataset to Zenodo (new version of DOI 10.5281/zenodo.18901542)
+- [x] Publish v4 dataset to Zenodo (DOI: 10.5281/zenodo.19482383) — but see "Dataset Publication Defect" below (2026-07-26): the 7d/30d/90d stream archives in that deposit are stale
 
 ## Phase 10 — Benign Data Rebuild (v3)
 
@@ -242,6 +242,10 @@ GitHub release and Zenodo archival of software and datasets.
 
 - DOI audit: routed all generic "dataset" references in README.md, DATASET_README.md, and CLAUDE.md to the Zenodo **concept DOI** [10.5281/zenodo.18901627](https://doi.org/10.5281/zenodo.18901627) (always resolves to latest version). Version-specific DOIs (v3: 18901542, v4: 19482383) retained for reproducibility citations. Software DOI (18810298) unchanged.
 - Stream event-count sync: the security-gym paper draft (`research-assistant/mypapers/security-gym/drafts/v3.md` §5.2) carried stale/rounded per-stream totals that disagreed with DATASET_README.md. Queried the shipped v4 DBs directly to establish ground truth — DATASET_README is canonical. Updated the paper table to match (7d: 4,891,541 / 25,980; 30d: 21,511,208 / 609,520; 90d: 63,212,997 / 549,787; 365d: 257,654,256 / 1,857,178).
+
+## Dataset Publication Defect — Stale v4 Stream Archives (2026-07-26)
+
+Read-only validation on hopper confirmed that the v4 dataset deposit (Zenodo [10.5281/zenodo.19482383](https://doi.org/10.5281/zenodo.19482383), mirrored at HuggingFace `j-klawson/security-gym-v4`) contains stale archives for the 7d, 30d, and 90d streams. The archives were compressed from a small morning-of-2026-03-22 composition (140,315 / 1,103,255 / 1,996,031 events; 2.9–5.1% of the final streams) that predates the evening recomposition which produced the final v4 databases (4,891,541 / 21,511,208 / 63,212,997 events). Hash identity (Zenodo MD5 and HuggingFace LFS SHA-256 both match the local archives) proves the published copies are the stale ones; the live databases on hopper hold the correct final streams and are unmodified. The 365d archive is very likely genuine (frame-reported size byte-identical to the live database, nanosecond-identical mtime, Zenodo MD5 match) pending a full decompress-and-count. Local `.zst` archives were deleted after measurement. All locally produced results (Exp 13, rule-agent benchmarks, rlsecd runs) used the live databases and are unaffected; only downloaders of the published archives are affected. Full evidence, timeline reconstruction, and per-file verdicts: `data/provenance/V4_ARCHIVE_STALENESS_20260726.md`. Remediation checklist: TODO.md "V4 Published-Archive Remediation".
 
 ## Phase 11 — Report Action / SOC Escalation (Future)
 

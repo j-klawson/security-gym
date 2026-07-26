@@ -2,6 +2,20 @@
 
 Current action items for security-gym development.
 
+## V4 Published-Archive Remediation (2026-07-26)
+
+Read-only validation on hopper (report: `data/provenance/V4_ARCHIVE_STALENESS_20260726.md`, commit 842a3c3) proved the 7d/30d/90d stream archives published to Zenodo 10.5281/zenodo.19482383 and HuggingFace `j-klawson/security-gym-v4` are stale morning-of-2026-03-22 compositions (140,315 / 1,103,255 / 1,996,031 events versus the live 4,891,541 / 21,511,208 / 63,212,997). The 365d archive is very likely genuine. Live DBs are correct; local `.zst` archives were deleted after measurement.
+
+- [x] Validate the staleness claim end-to-end on local disk (hashes vs Zenodo MD5 + HF LFS SHA-256; decompress-and-count vs live DBs; filesystem timeline)
+- [ ] Recompress 7d/30d/90d archives from the live v4 DBs; verify each by decompress-and-count (expect 4,891,541 / 21,511,208 / 63,212,997 events) before upload
+- [ ] Publish corrected dataset version under concept DOI 10.5281/zenodo.18901627 (new version DOI superseding 19482383)
+- [ ] Replace the three stale LFS objects in HuggingFace `j-klawson/security-gym-v4`
+- [ ] Verify the published 365d archive by full decompress-and-count (from the Zenodo copy or a fresh recompress of the live DB; expect 257,654,256 events, max timestamp 2014-01-01T01:49:45.161295-05:00)
+- [ ] Hash-verify `benign_v4.db.zst` and `campaigns_v2.db.zst` against the published deposit when assembling the corrected release (local freshness evidence was mtime-only and the archives are gone)
+- [ ] Fill the six `"sha256": "TBD"` placeholders in `data/croissant.json` from the regenerated archives
+- [ ] Update version-DOI citations (README, CITATION.cff, DATASET_README.md, paper drafts) to the corrected version DOI
+- [ ] Audit downstream consumers of the published 7d/30d/90d archives (they received 3–5% of the intended streams)
+
 ## Phase 14 — eBPF Benign-Data Validity (BLOCKED, 2026-06-05)
 
 **STATUS: BLOCKED.** A separate bug (found 2026-06-05) must be fixed before this work resumes. The bug was not yet described in session; record its specifics here once provided. [TODO: detail the gating bug.]
