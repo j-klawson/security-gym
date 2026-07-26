@@ -8,12 +8,18 @@ Read-only validation on hopper (report: `data/provenance/V4_ARCHIVE_STALENESS_20
 
 - [x] Validate the staleness claim end-to-end on local disk (hashes vs Zenodo MD5 + HF LFS SHA-256; decompress-and-count vs live DBs; filesystem timeline)
 - [x] Recompress 7d/30d/90d archives from the live v4 DBs; verify each by decompress-and-count (expect 4,891,541 / 21,511,208 / 63,212,997 events) before upload (2026-07-26; fresh sizes 163,895,433 / 719,156,975 / 2,122,545,681 bytes; hashes in provenance report Section 9.1)
-- [ ] Publish corrected dataset version under concept DOI 10.5281/zenodo.18901627 (new version DOI superseding 19482383): web UI → New version of record 19482383, carry over the four verified files (365d, benign_v4, campaigns_v2, DATASET_README), upload the three fresh archives + updated DATASET_README.md, publish, note new version DOI
+- [ ] Publish corrected dataset version under concept DOI 10.5281/zenodo.18901627 (new version DOI superseding 19482383). Steps (web UI):
+  - [ ] Open record 19482383 → "New version"
+  - [ ] Keep (carry over) the three verified data files: `exp_365d_realistic_v4.db.zst`, `benign_v4.db.zst`, `campaigns_v2.db.zst`; remove the stale `exp_7d_brute_v4.db.zst`, `exp_30d_heavy_v4.db.zst`, `exp01_90d_v4.db.zst`, and the old `DATASET_README.md`
+  - [ ] Upload the three regenerated archives from `data/` on hopper. Zenodo should display these MD5s: 7d `338a73eced346420ceea1eab9b3cce94` (163,895,433 B), 30d `0494284aec6f3f7b3440e3a39ae13b1d` (719,156,975 B), 90d `61c9df3a3ea29f3c96a30e805f063e16` (2,122,545,681 B)
+  - [ ] Upload the updated `data/DATASET_README.md` (corrected compressed sizes, commit b75d3a7)
+  - [ ] In the version description, note that this version corrects the stale 7d/30d/90d archives of 19482383 (2.9–5.1% of intended events; see `data/provenance/V4_ARCHIVE_STALENESS_20260726.md` Section 9)
+  - [ ] Publish; record the new version DOI in TODO.md, CLAUDE.md, and ROADMAP.md
+- [ ] After the new Zenodo version exists, update version-DOI references from 19482383 to the new DOI: `data/croissant.json` (`citeAs`, `sameAs`, the three `contentUrl`s pointing at `zenodo.org/records/19482383/files/...`, and `rai:dataReleaseMaintenancePlan`), `data/DATASET_README.md` citation block, repo README badges, CITATION.cff, and both paper drafts in `research-assistant/mypapers/`; re-upload the revised `croissant.json` and dataset card to HuggingFace
 - [x] Replace the three stale LFS objects in HuggingFace `j-klawson/security-gym-v4`; upload corrected `croissant.json` and dataset card README (2026-07-26, HF commit fd4bcfb6; API-verified LFS sha256 match for all three archives)
 - [ ] Verify the published 365d archive by full decompress-and-count (from the Zenodo copy or a fresh recompress of the live DB; expect 257,654,256 events, max timestamp 2014-01-01T01:49:45.161295-05:00)
 - [x] Hash-verify `benign_v4.db.zst` and `campaigns_v2.db.zst` against the published deposit when assembling the corrected release (2026-07-26: downloaded from Zenodo, MD5 match, decompress-and-count match — 11,159,241 / 60,468 events; verified copies kept in `data/`)
 - [x] Fill the six `"sha256": "TBD"` placeholders in `data/croissant.json` from the regenerated archives (2026-07-26; also corrected `contentSize` for the three regenerated entries)
-- [ ] Update version-DOI citations (README, CITATION.cff, DATASET_README.md, paper drafts) to the corrected version DOI
 - [ ] Audit downstream consumers of the published 7d/30d/90d archives (they received 3–5% of the intended streams)
 
 ## Phase 14 — eBPF Benign-Data Validity (BLOCKED, 2026-06-05)
