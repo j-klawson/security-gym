@@ -30,4 +30,4 @@ stream:
       execution: 0.05             # TA0002 / T1059 — command execution
 
   output:
-    db: ../data/exp01_90d_v4.db
+    db: ../data/exp_90d_v4.db

@@ -434,7 +434,7 @@ stream:
       credential_stuffing: 0.10
       execution: 0.05
   output:
-    db: data/exp01_90d_v4.db
+    db: data/exp_90d_v4.db
 ```
 
 ## Project Structure

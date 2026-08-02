@@ -197,7 +197,7 @@ Extend benign eBPF kernel telemetry from a 1-hour single-server manual collectio
 - [x] Compose and validate v4 experiment streams (with 24.2% eBPF downsampling):
   - exp_7d_brute_v4.db: 4.9M events (4.87M benign, 26K malicious), 1.9GB
   - exp_30d_heavy_v4.db: 21.5M events (20.9M benign, 610K malicious), 8.5GB
-  - exp01_90d_v4.db: 63.2M events (62.7M benign, 550K malicious), 25GB
+  - exp_90d_v4.db: 63.2M events (62.7M benign, 550K malicious), 25GB (named exp01_90d_v4.db until the 2026-08-02 rename)
   - exp_365d_realistic_v4.db: 257.7M events (255.8M benign, 1.86M malicious), 101GB
 - [x] Update CLAUDE.md with new eBPF event counts
 - [x] Publish v4 dataset to Zenodo (DOI: 10.5281/zenodo.19482383) — but see "Dataset Publication Defect" below (2026-07-26): the 7d/30d/90d stream archives in that deposit are stale
@@ -219,7 +219,7 @@ Rebuild the benign dataset from scratch to eliminate hospital PII (LHSC/SJHC sta
 - [x] Re-compose experiment streams from benign_v3.db + campaigns_v2.db (sequentially to avoid OOM on 24GB system)
   - exp_7d_brute.db: 140K events (114K benign, 26K attack), 6 campaigns, 101MB
   - exp_30d_heavy.db: 1.0M events (494K benign, 509K attack), 284 campaigns, 643MB
-  - exp01_90d.db: 1.9M events (1.4M benign, 475K attack), 277 campaigns, 1.3GB
+  - exp_90d.db: 1.9M events (1.4M benign, 475K attack), 277 campaigns, 1.3GB (named exp01_90d.db until the 2026-08-02 rename)
   - exp_365d_realistic.db: 9.4M events (7.8M benign, 1.6M attack), 897 campaigns, 6.5GB
   - All 4 streams validated: temporal order PASS, label consistency PASS, session coherence PASS
 - [x] Publish v3 dataset to Zenodo (DOI: 10.5281/zenodo.18901542)

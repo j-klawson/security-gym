@@ -236,11 +236,11 @@
     },
     {
       "@type": "cr:FileObject",
-      "@id": "exp01_90d_v4.db.zst",
-      "name": "exp01_90d_v4.db.zst",
+      "@id": "exp_90d_v4.db.zst",
+      "name": "exp_90d_v4.db.zst",
       "description": "90-day eBPF feature ablation stream: 63,212,997 events (549,787 malicious) with discovery 0.35, brute_force 0.30, web_exploit 0.20, credential_stuffing 0.10, execution 0.05 distribution at 3.0 campaigns/day. Decompressed: 25 GB SQLite database. Used in the \u00a76.3 30-seed eBPF ablation (Cohen's d=2.577).",
       "contentSize": "2122545681",
-      "contentUrl": "https://huggingface.co/datasets/j-klawson/security-gym-v4/resolve/main/exp01_90d_v4.db.zst",
+      "contentUrl": "https://huggingface.co/datasets/j-klawson/security-gym-v4/resolve/main/exp_90d_v4.db.zst",
       "encodingFormat": "application/zstd",
       "md5": "61c9df3a3ea29f3c96a30e805f063e16",
       "sha256": "0749e549aa377680c4204fe329ddd1ce0d9d0bb80c751c53b0b5f560448a433d"

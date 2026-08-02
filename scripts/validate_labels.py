@@ -6,7 +6,7 @@ Catches labeling errors before they corrupt experiment results.
 
 Usage:
     python scripts/validate_labels.py data/campaigns.db
-    python scripts/validate_labels.py data/exp01_90d.db --spot-check 20 --verbose
+    python scripts/validate_labels.py data/exp_90d.db --spot-check 20 --verbose
     python scripts/validate_labels.py data/benign.db --check no_unlabeled_events --check label_consistency
 """
 

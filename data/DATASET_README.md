@@ -25,7 +25,7 @@ Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poiss
 |------|-----------|-------------|--------|-----------|-----------|----------|
 | `exp_7d_brute_v4.db.zst` | 156 MB | 1.9 GB | 4,891,541 | 25,980 | SSH brute force only | 7 days |
 | `exp_30d_heavy_v4.db.zst` | 686 MB | 8.5 GB | 21,511,208 | 609,520 | Mixed, heavy attack rate | 30 days |
-| `exp01_90d_v4.db.zst` | 2.0 GB | 25 GB | 63,212,997 | 549,787 | Mixed, moderate rate | 90 days |
+| `exp_90d_v4.db.zst` | 2.0 GB | 25 GB | 63,212,997 | 549,787 | Mixed, moderate rate | 90 days |
 | `exp_365d_realistic_v4.db.zst` | 12.7 GB | 101 GB | 257,654,256 | 1,857,178 | Mixed, realistic rate | 365 days |
 
 ## Attack Types
