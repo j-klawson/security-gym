@@ -26,7 +26,7 @@ Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poiss
 | `exp_7d_brute_v4.db.zst` | 156 MB | 1.9 GB | 4,891,541 | 25,980 | SSH brute force only | 7 days |
 | `exp_30d_heavy_v4.db.zst` | 686 MB | 8.5 GB | 21,511,208 | 609,520 | Mixed, heavy attack rate | 30 days |
 | `exp_90d_v4.db.zst` | 2.0 GB | 25 GB | 63,212,997 | 549,787 | Mixed, moderate rate | 90 days |
-| `exp_365d_realistic_v4.db.zst` | 12.7 GB | 101 GB | 257,654,256 | 1,857,178 | Mixed, realistic rate | 365 days |
+| `exp_365d_realistic_v4.db.zst` | 8.1 GB | 101 GB | 257,654,256 | 1,857,178 | Mixed, realistic rate | 365 days |
 
 ## Attack Types
 
@@ -161,7 +161,7 @@ The `validate_labels.py` script runs 9 automated checks:
 
 ## Citation
 
-The dataset has a Zenodo **concept DOI** ([10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541)) that always resolves to the latest version, and a per-version DOI for reproducibility (v4: [10.5281/zenodo.19482383](https://doi.org/10.5281/zenodo.19482383)). Cite the version-specific DOI in papers.
+The dataset has a Zenodo **concept DOI** ([10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541)) that always resolves to the latest version, and a per-version DOI for reproducibility (v4.1: [10.5281/zenodo.21763493](https://doi.org/10.5281/zenodo.21763493)). Cite the version-specific DOI in papers.
 
 A HuggingFace mirror of the three smaller composed streams (7d, 30d, 90d, totaling 2.8 GB compressed) is available at [huggingface.co/datasets/j-klawson/security-gym-v4](https://huggingface.co/datasets/j-klawson/security-gym-v4) for low-friction reviewer access. The 365-day stream and the underlying base databases (`benign_v4`, `campaigns_v2`) live on Zenodo only due to size. A Croissant (MLCommons 1.0) metadata file with Responsible AI fields lives both at `data/croissant.json` in this repository and at the root of the HuggingFace dataset.
 
@@ -170,10 +170,10 @@ A HuggingFace mirror of the three smaller composed streams (7d, 30d, 90d, totali
   author    = {Lawson, Keith},
   title     = {Security-Gym Dataset: Labeled Linux Log and eBPF
                Streams for Continual Learning Research},
-  version   = {4.0},
+  version   = {4.1},
   year      = {2026},
-  doi       = {10.5281/zenodo.19482383},
-  url       = {https://doi.org/10.5281/zenodo.19482383},
+  doi       = {10.5281/zenodo.21763493},
+  url       = {https://doi.org/10.5281/zenodo.21763493},
   license   = {Apache-2.0}
 }
 
