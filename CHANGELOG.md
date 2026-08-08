@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Pinned the ruff rule set against upstream default drift
+
+The `lint` CI job began failing on unchanged source after ruff 0.16 widened its implicit default rule selection beyond `E4`/`E7`/`E9`/`F` to include `I`, `UP`, and subsets of `RUF`, `BLE`, `SIM`, `PERF`, `FURB`, and `S`. Because `pyproject.toml` declared no `select` and the `[dev]` extra pinned only `ruff>=0.4.0`, a routine tooling upgrade silently changed what CI enforced, producing 188 errors across code that had not been touched. The enforced rule set is now declared explicitly (`[tool.ruff.lint] select = ["E4", "E7", "E9", "F"]`) and the dev pin is bounded to `ruff>=0.16.1,<0.17`, so the rules stay stable across ruff releases and new families are adopted deliberately. No library code changed.
+
 ## 0.5.1
 
 ### Scoped the CI dependency audit to the project closure

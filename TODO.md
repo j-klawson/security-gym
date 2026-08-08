@@ -2,6 +2,17 @@
 
 Current action items for security-gym development.
 
+## CI Lint Failure — Ruff Rule-Set Drift ✅ (2026-08-08)
+
+The `lint` job failed on all seven pushes from 2026-07-26 onward (188 errors) while `test` and `security` passed. Cause: no rule selection declared in `pyproject.toml` plus an unbounded `ruff>=0.4.0` dev pin, so CI picked up ruff 0.16.1, which widened the implicit default rule set. Fix is configuration-only; no source changed. Detail in ROADMAP.md "CI Correction — Ruff Default Rule-Set Drift".
+
+- [x] Reproduce under the CI ruff version (0.16.1) and confirm `--select E4,E7,E9,F` is clean, isolating drift from regression
+- [x] Declare `[tool.ruff.lint] select = ["E4", "E7", "E9", "F"]` explicitly in `pyproject.toml`
+- [x] Bound the dev pin to `ruff>=0.16.1,<0.17`; upgrade the local venv (0.15.4 → 0.16.2) so local matches CI
+- [x] Verify clean under both 0.16.1 and 0.16.2
+- [ ] Decide whether to adopt the `I` and `UP` rule families (94 findings, all safe-autofixable; `UP017` `timezone.utc` → `datetime.UTC` accounts for 67). `BLE001` and `RUF059` are not recommended: they flag the intentional broad excepts in the attack modules and unused tuple unpacking in tests
+- [ ] Housekeeping unrelated to this fix: the working tree carries deletions of `data/build_benign_report.json` and the two `data/provenance/` C11 artifacts, plus an untracked `data.old/`. Decide whether the deletions are intended before they are swept into an unrelated commit
+
 ## V4 Published-Archive Remediation (2026-07-26)
 
 Read-only validation on hopper (report: `data/provenance/V4_ARCHIVE_STALENESS_20260726.md`, commit 842a3c3) proved the 7d/30d/90d stream archives published to Zenodo 10.5281/zenodo.19482383 and HuggingFace `j-klawson/security-gym-v4` are stale morning-of-2026-03-22 compositions (140,315 / 1,103,255 / 1,996,031 events versus the live 4,891,541 / 21,511,208 / 63,212,997). The 365d archive is very likely genuine. Live DBs are correct. Remediation executed 2026-07-26 (report Section 9): all three archives regenerated from the live DBs with `zstd -T0 -19 --long=27` and round-trip verified (decompress-and-count, exact match); published `benign_v4.db.zst`/`campaigns_v2.db.zst` downloaded from Zenodo, MD5-matched, content-verified, and retained in `data/`; `croissant.json` now carries real checksums for all six entries.
