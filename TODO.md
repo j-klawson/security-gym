@@ -34,6 +34,17 @@ Read-only validation on hopper (report: `data/provenance/V4_ARCHIVE_STALENESS_20
 - [x] Fill the six `"sha256": "TBD"` placeholders in `data/croissant.json` from the regenerated archives (2026-07-26; also corrected `contentSize` for the three regenerated entries)
 - [ ] Audit downstream consumers of the published 7d/30d/90d archives (they received 3–5% of the intended streams)
 
+## Companion-Paper Citation Correction ✅ (2026-08-08)
+
+The HuggingFace card cited the companion paper as "NeurIPS 2026 Evaluations & Datasets Track"; that submission was withdrawn. The paper was accepted at the Continual Reinforcement Learning Workshop at RLC 2026 (Montreal, 2026-08-15), which is non-archival — no proceedings, no DOI, and therefore not citable as a conference publication.
+
+- [x] Audit every published surface for the withdrawn attribution. Found only in the hub card; the Zenodo 4.1 record description and related identifiers, `croissant.json` (hub and local), `data/DATASET_README.md`, `README.md`, and `CITATION.cff` were all checked and clean
+- [x] Correct the card: Lawson and Malik byline, workshop venue and date, OpenReview PDF link, explicit non-archival statement, dataset citations redirected to the v4.1 DOI (HF commit c0b9543b). Dropped the "Section 6.1 of the companion paper" pointer, unverifiable against the camera-ready
+- [x] Remove the `paperswithcode_id: security-gym` frontmatter field (HF commit c8916bad); Papers With Code is retired and the slug resolves to nothing. Absence verified in both the raw card and the hub API `cardData`
+- [x] Track the card in-repo at `data/HF_DATASET_CARD.md` (commit bea63f5) so the hub copy stops being the only copy. Workflow: edit that file, upload as `README.md` via `huggingface_hub`
+- [ ] Deposit the camera-ready PDF somewhere under project control (GitHub repo or the Zenodo software record) and link it from the card as a fallback. OpenReview note IDs are stable, but post-event reader visibility is a venue setting; the non-archival status preserves the right to self-host. Blocked locally: OpenReview serves a bot challenge to non-browser clients (API and direct PDF both 403), so the file must be downloaded manually
+- [ ] Decide whether the workshop paper warrants an arXiv preprint for a durable, indexable copy
+
 ## Phase 14 — eBPF Benign-Data Validity (BLOCKED, 2026-06-05)
 
 **STATUS: BLOCKED.** A separate bug (found 2026-06-05) must be fixed before this work resumes. The bug was not yet described in session; record its specifics here once provided. [TODO: detail the gating bug.]
@@ -61,7 +72,7 @@ Open decisions (deferred until the blocker is cleared):
 - [ ] Sequencing: diagnose-first, commit to re-collection now, or both in parallel.
 - [ ] Target host/workload if re-collecting: Isildur plus synthetic realistic workload (preserves auditd ground truth, vuln services, ISILDUR_READY snapshots), a new dedicated realistic target VM, or (rejected) a real production server (PII plus attacking production).
 - [ ] Collection duration and the specific non-stationarity required (diurnal/weekly cycles, Poisson campaign base rate); whether a shorter genuinely-continuous collection plus disclosure suffices.
-- [ ] Paper/dataset blast radius: whether this supersedes the v4 streams and Zenodo version (DOI 10.5281/zenodo.19482383) and must land before the NeurIPS D&B submission.
+- [ ] Paper/dataset blast radius: whether this supersedes the v4 streams and Zenodo version (now v4.1, DOI 10.5281/zenodo.21763493). The NeurIPS submission that previously set this deadline was withdrawn; the companion paper is now the non-archival RLC 2026 workshop paper, so no proceedings deadline gates this work. Any future archival submission would re-impose one.
 
 ## Block recovery — `block_visibility` + `block_ttl` ✅ (v0.5.0, 2026-06-06)
 
