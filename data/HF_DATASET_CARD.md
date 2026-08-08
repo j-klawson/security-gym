@@ -1,0 +1,211 @@
+---
+license: apache-2.0
+pretty_name: "Security-Gym Dataset (v4): Labeled Linux Log and eBPF Streams for Continual Learning"
+task_categories:
+  - reinforcement-learning
+  - token-classification
+language:
+  - en
+tags:
+  - cybersecurity
+  - intrusion-detection
+  - eBPF
+  - MITRE-ATT&CK
+  - continual-learning
+  - streaming
+  - log-analysis
+  - linux
+  - SIEM
+  - RL-environment
+size_categories:
+  - 10M<n<100M
+annotations_creators:
+  - machine-generated
+language_creators:
+  - found
+multilinguality: monolingual
+source_datasets:
+  - original
+configs:
+  - config_name: exp_7d_brute_v4
+    data_files:
+      - split: train
+        path: exp_7d_brute_v4.db.zst
+  - config_name: exp_30d_heavy_v4
+    data_files:
+      - split: train
+        path: exp_30d_heavy_v4.db.zst
+  - config_name: exp_90d_v4
+    data_files:
+      - split: train
+        path: exp_90d_v4.db.zst
+viewer: false
+---
+
+# Security-Gym Dataset (v4)
+
+Ground-truth-labeled Linux server log and eBPF kernel event streams for cybersecurity continual learning research. Designed for use with the [security-gym](https://github.com/j-klawson/security-gym) Gymnasium environment.
+
+This HuggingFace mirror hosts three of the four composed experiment streams (the smoke test, the default benchmark, and the ablation stream, totaling ~2.8 GB compressed). The full release including the 365-day long-horizon stability stream (8.1 GB compressed) and the underlying base databases lives on Zenodo:
+
+- **Concept DOI** (always resolves to latest): [10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541)
+- **v4.1 version DOI** (frozen for reproducibility): [10.5281/zenodo.21763493](https://doi.org/10.5281/zenodo.21763493)
+
+## Companion paper
+
+> Lawson, K. and Malik, H. (2026). *Security-Gym: Evaluating Temporally-Uniform Agents on High-Fidelity Linux Telemetry.* Continual Reinforcement Learning Workshop, Reinforcement Learning Conference (RLC) 2026, Montreal, August 15, 2026. [PDF](https://openreview.net/pdf?id=ar2IuMm5kj)
+
+The workshop is non-archival and publishes no proceedings, so the paper has no DOI and should not be cited as a conference publication. Cite the version-specific dataset DOI ([10.5281/zenodo.21763493](https://doi.org/10.5281/zenodo.21763493)) when reporting results on Security-Gym streams.
+
+## Files in this mirror
+
+| File | Compressed | Decompressed | Events | Malicious | Campaigns | Duration |
+|------|-----------|-------------|--------|-----------|-----------|----------|
+| `exp_7d_brute_v4.db.zst` | 156 MB | 1.9 GB | 4,891,541 | 25,980 | SSH brute force only | 7 days |
+| `exp_30d_heavy_v4.db.zst` | 686 MB | 8.5 GB | 21,511,208 | 609,520 | Mixed, heavy attack rate | 30 days |
+| `exp_90d_v4.db.zst` | 2.0 GB | 25 GB | 63,212,997 | 549,787 | Mixed, moderate rate | 90 days |
+
+## Files only on Zenodo (not mirrored here due to size)
+
+| File | Compressed | Decompressed | Events | Malicious | Campaigns | Duration |
+|------|-----------|-------------|--------|-----------|-----------|----------|
+| `exp_365d_realistic_v4.db.zst` | 8.1 GB | 101 GB | 257,654,256 | 1,857,178 | Mixed, realistic rate | 365 days |
+| `benign_v4.db.zst` | 434 MB | 5.8 GB | 11,159,241 | 0 | (base benign) | — |
+| `campaigns_v2.db.zst` | 4.2 MB | 41 MB | 60,468 | 30,436 | (base campaigns) | — |
+
+The 365-day stream is the long-horizon stability target used in the companion paper. Fetch it from Zenodo when running long-horizon evaluations; the three streams hosted here cover the canonical 30-day prediction benchmark, the 90-day eBPF ablation, and the 7-day smoke test.
+
+## Quick start
+
+```bash
+pip install security-gym huggingface_hub
+```
+
+```python
+from huggingface_hub import hf_hub_download
+import zstandard, sqlite3
+
+path = hf_hub_download(
+    repo_id="j-klawson/security-gym-v4",
+    filename="exp_30d_heavy_v4.db.zst",
+    repo_type="dataset",
+)
+
+# Decompress to a local file
+with open(path, "rb") as f, open("exp_30d_heavy_v4.db", "wb") as out:
+    zstandard.ZstdDecompressor().copy_stream(f, out)
+
+# Stream events through the Gymnasium environment
+import gymnasium as gym
+env = gym.make("SecurityLogStream-Hybrid-v0", db_path="exp_30d_heavy_v4.db")
+obs, info = env.reset()
+for _ in range(1000):
+    obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+```
+
+## Schema
+
+All streams are SQLite databases (compressed with Zstandard) with a single `events` table:
+
+```sql
+CREATE TABLE events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp     TEXT NOT NULL,       -- ISO 8601 UTC
+    source        TEXT NOT NULL,       -- event source (see below)
+    raw_line      TEXT NOT NULL,       -- original log line or eBPF event text
+    parsed        TEXT,                -- JSON parsed fields
+    is_malicious  INTEGER,             -- 0=benign, 1=malicious
+    campaign_id   TEXT,                -- attack campaign identifier
+    attack_type   TEXT,                -- see attack types below
+    attack_stage  TEXT,                -- MITRE ATT&CK stage
+    severity      INTEGER,             -- 1-5
+    session_id    TEXT,
+    src_ip        TEXT,
+    username      TEXT,
+    service       TEXT
+);
+```
+
+### Event sources
+
+- `auth_log` — SSH authentication, PAM sessions
+- `syslog` — system daemon messages
+- `web_access` — nginx/apache access logs (Combined Log Format)
+- `web_error` — nginx/apache error logs
+- `journal` — systemd journal entries (JSON)
+- `ebpf_process` — kernel process exec/exit events (includes ppid + parent_comm)
+- `ebpf_network` — kernel connect/accept events (includes uid)
+- `ebpf_file` — kernel file open/unlink events
+
+### Attack types
+
+| Type | MITRE ATT&CK | Description |
+|------|--------------|-------------|
+| `brute_force` | T1110.001 | SSH password brute force (paramiko) |
+| `credential_stuffing` | T1110.004 | SSH credential stuffing with unique credential pairs |
+| `discovery` | T1046 | SYN port scanning (scapy) |
+| `web_exploit` | T1190 | Log4Shell (CVE-2021-44228) JNDI injection; Redis Lua sandbox escape (CVE-2022-0543) |
+| `execution` | T1059.004 | Post-authentication Unix shell command execution |
+
+## Composition methodology
+
+Composed from `benign_v4.db` + `campaigns_v2.db` using `StreamComposer` with Poisson-scheduled attack injection and 24.2% eBPF downsampling (simulating a single busy server). Attack campaigns follow per-stream MITRE ATT&CK-aligned distributions:
+
+- **`exp_7d_brute_v4`**: brute force only (1.0 campaigns/day)
+- **`exp_30d_heavy_v4`**: uniform 0.20 across discovery, brute_force, web_exploit, credential_stuffing, execution (10.0 campaigns/day)
+- **`exp_90d_v4`** (ablation stream): discovery 0.35, brute_force 0.30, web_exploit 0.20, credential_stuffing 0.10, execution 0.05 (3.0 campaigns/day)
+- **`exp_365d_realistic_v4`** (Zenodo only): discovery 0.30, brute_force 0.30, credential_stuffing 0.20, web_exploit 0.15, execution 0.05 (2.5 campaigns/day)
+
+All streams pass nine validation checks via `scripts/validate_labels.py` (label consistency, raw-line spot checks, campaign boundaries, campaign type cross-validation, target-array consistency, attack-type distribution, temporal order, no unlabeled events, session coherence).
+
+## Labeling
+
+Each attack campaign is executed against the target VM by the campaign orchestrator, which records start time, end time, and source IPs for every attack phase. The `CampaignLabeler` labels collected events using **time-window + source-IP matching**: an event is labeled malicious if its timestamp falls within a phase's time window AND its `src_ip` matches one of that phase's attacker IPs. Events with no `src_ip` (e.g., syslog daemon messages during an attack window) match on time window alone. eBPF kernel events use the identical labeler.
+
+Malicious events receive five ground-truth fields: `is_malicious=1`, `campaign_id`, `attack_type`, `attack_stage`, and `severity` (1-5). Benign events have `is_malicious=0` with the remaining fields NULL.
+
+## Intended use
+
+- Research on streaming continual reinforcement learning for cybersecurity defense
+- Online representation learning from raw text and structured kernel-event streams
+- Streaming deep-RL technique validation (LMS, ObGD, EMA normalization, sparse initialization)
+- Reward design in observation-suppressing environments
+- Comparative evaluation of detection approaches (learned vs. rule-based) on non-stationary data
+
+## Not intended for use
+
+- Production SOC tooling
+- A model of enterprise infrastructure
+- Zero-day generalization evaluation (all attack modules are known TTPs)
+- A substitute for real-world deployment validation
+- Multi-host lateral movement studies (single-target only)
+
+The attack modules in this dataset target a purpose-built lab VM (`isildur`) and **must not be directed at third-party infrastructure**.
+
+## Provenance and PII
+
+- **Benign traffic**: 4 personal Linux servers running standard services. 7,915,858 log events. Hostnames, domains, and server IPs scrubbed via case-insensitive replacement to a single normalized target identity (`isildur`, `192.168.2.201`).
+- **Benign eBPF**: 24-hour collections from 3 Debian 13 servers (hypervisor, public web server, GPU lab server). 3,243,383 kernel events.
+- **Attack traffic**: 10 scripted campaigns executed against a purpose-built Debian 11 VM with intentionally vulnerable services (OpenSSH, Log4j, Redis CVE-2022-0543). 60,468 events labeled via time-window + source-IP matching.
+- **eBPF kernel events**: Collected via BCC tracepoints (`sys_enter_execve`, `sched_process_exit`, `sys_enter_connect`, `sys_enter_accept4`, `sys_enter_openat`, `sys_enter_unlinkat`).
+- **Hostile traffic filtering**: Real-server benign baselines are filtered to remove attack traffic before inclusion. Network events from detected malicious IPs are excluded from the benign baseline to prevent contamination.
+- **No third-party PII**: All data originates from infrastructure owned or operated by the dataset author. No personal user data is included.
+
+## Citation
+
+```bibtex
+@dataset{lawson_security_gym_dataset_2026,
+  author    = {Lawson, Keith},
+  title     = {Security-Gym Dataset: Labeled Linux Log and eBPF
+               Streams for Continual Learning Research},
+  version   = {4.1},
+  year      = {2026},
+  doi       = {10.5281/zenodo.21763493},
+  url       = {https://doi.org/10.5281/zenodo.21763493},
+  license   = {Apache-2.0}
+}
+```
+
+## License
+
+Apache-2.0. See [LICENSE](https://github.com/j-klawson/security-gym/blob/main/LICENSE).
