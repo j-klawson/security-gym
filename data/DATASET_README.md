@@ -15,7 +15,7 @@ All files are compressed with [Zstandard](https://facebook.github.io/zstd/). Dec
 | File | Compressed | Decompressed | Events | Description |
 |------|-----------|-------------|--------|-------------|
 | `benign_v4.db.zst` | 434 MB | 5.8 GB | 11,159,241 | Real benign server traffic (auth.log, syslog, nginx) + 3.24M eBPF kernel events from 3 servers. PII-scrubbed: server hostnames and IPs normalized to a single target host. |
-| `campaigns_v2.db.zst` | 4.2 MB | 41 MB | 60,468 | 10 attack campaigns across 5 attack types with log + eBPF kernel events. |
+| `campaigns_v2.db.zst` | 4.2 MB | 41 MB | 60,468 | 10 campaign runs from 9 configurations, across 5 attack types, with log + eBPF kernel events. 30,436 events labeled malicious; see [Campaigns](#campaigns). |
 
 ### Pre-Composed Experiment Streams
 
@@ -37,6 +37,38 @@ Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poiss
 | `discovery` | T1046 | SYN port scanning (scapy) |
 | `web_exploit` | T1190 | Log4Shell (CVE-2021-44228) JNDI injection; Redis Lua sandbox escape (CVE-2022-0543) |
 | `execution` | T1059.004 | Post-authentication Unix shell command execution |
+
+## Campaigns
+
+`campaigns_v2.db` is the recorded output of nine campaign configurations run against the target VM. Six configs are single-phase (one attack module each); three chain multiple phases. The database carries ten campaign IDs because `recon_only` was run twice, and the first of those runs was aborted after 18 seconds (0 attempts recorded, 1 event); it is retained for provenance and should be excluded from analysis.
+
+| Campaign ID | Configuration | Phases | Malicious events |
+|---|---|---|---|
+| `campaign_f1e3fd24735f` | Recon Only (aborted run) | recon | 1 |
+| `campaign_4be8af976748` | Recon Only | recon | 77 |
+| `campaign_9d867320ecdd` | SSH Brute Force Only | ssh_brute_force | 3,494 |
+| `campaign_0bd8f6b12d53` | Log4Shell Only | log4shell | 300 |
+| `campaign_1194b24e7e9b` | Credential Stuffing Only | credential_stuffing | 3,079 |
+| `campaign_d950c97bd4e5` | Post-Auth Execution Only | ssh_post_auth | 1,684 |
+| `campaign_220423a6360f` | Recon to SSH to Log4Shell | recon, ssh_brute_force, log4shell | 9,898 |
+| `campaign_e269a921f580` | Full Kill Chain | recon, credential_stuffing, ssh_post_auth | 6,241 |
+| `campaign_c8f0bc4d91c2` | Redis Lua Sandbox Escape Only | redis_lua_escape | 947 |
+| `campaign_8197f8bcbf31` | Redis Kill Chain | recon, redis_lua_escape, ssh_post_auth | 4,715 |
+| | | **Total** | **30,436** |
+
+Full per-campaign metadata (start and end times, MITRE mappings, per-phase attempt and success counts, module parameters) is in the `campaigns` table of the same database.
+
+### Label composition
+
+Of the 60,468 events, 30,436 are labeled malicious and 30,032 are labeled benign. The benign half is not a benign traffic baseline. Campaign collection captures every event on the target host inside the campaign window (plus a 60-second buffer on each side and a 30-second eBPF baseline), and the labeler marks an event malicious only when it matches an attacker IP within an attack phase. Everything else captured in that window is labeled benign, and much of it is the measurement apparatus itself: the BCC collector compiling its BPF program at startup accounts for 7,639 of the 19,456 benign `ebpf_file` events, with further contributions from the `pkill` that stops the collector, the `sudo` that launches it, and the SSH sessions used to retrieve the logs. The realistic benign baseline is supplied by `benign_v4.db` when experiment streams are composed; use the pre-composed streams above rather than `campaigns_v2.db` alone if a representative benign distribution matters.
+
+### Known limitations
+
+- **Total capture is short.** All ten campaigns were recorded in two sessions: eight on 2026-03-01 between 22:00 and 23:04 UTC, and the two Redis campaigns on 2026-03-06 between 18:20 and 18:31 UTC. The corpus represents roughly 75 minutes of wall-clock activity, replayed and redistributed by `StreamComposer` to build the multi-day streams.
+- **Exploit outcomes are deterministic.** Credential attacks never succeed (0 of 76 brute-force attempts, 0 of 50 credential-stuffing attempts) because the credential lists are fabricated. Exploitation always succeeds (350 of 350 Log4Shell attempts, 4 of 4 Redis attempts, 6 of 6 post-auth logins, the last using valid credentials). The dataset therefore contains no partially successful or failed exploitation, and only 8 successful SSH authentications in total.
+- **Kill-chain phase progression is scripted.** Phases advance on a timer, not as a consequence of the preceding phase succeeding.
+- **Two campaign configs carry an incorrect ATT&CK tactic.** `full_killchain` and `redis_killchain` label the `recon` phase `TA0043` (Reconnaissance) in the `mitre_tactics` column, while `recon_only` and `recon_ssh_log4shell` label the identical T1046 SYN scan `TA0007` (Discovery). T1046 (Network Service Discovery) belongs to Discovery; the `TA0043` values are wrong. The `attack_type` and `attack_stage` columns used for training are unaffected.
+- **eBPF network events have two collector defects.** IPv4 addresses on `connect` events are byte-reversed (a `dst` of `3.0.18.172` is really `172.18.0.3`), and `accept` events carry no peer address at all, so all 619 malicious `ebpf_network` events have a NULL `src_ip` and were labeled by time window alone. Neither defect affects log-derived events or the `is_malicious` labels, but IP-level analysis of the `ebpf_network` channel is not supported by this data.
 
 ## Event Sources
 

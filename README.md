@@ -139,7 +139,25 @@ Under `block_visibility="deny_log"`, a surfaced deny-log entry contributes *only
 | `privilege_escalation` | — | — | TA0004 — Privilege Escalation | Planned |
 | `exfiltration` | — | — | TA0010 — Exfiltration | Planned |
 
-The first six attacks have implemented modules, campaign configs, and validated datasets. Two kill chain campaigns combine multiple phases: recon -> credential stuffing -> post-auth execution, and recon -> Redis exploit -> SSH pivot.
+The first six attacks have implemented modules, campaign configs, and validated datasets. The remaining three tactics are planned and have no module, config, or data.
+
+### Campaign Configurations
+
+Nine YAML configs in `campaigns/` drive the six modules. Six are single-phase, isolating one module so its signature can be studied on its own; three chain multiple phases with distinct timing profiles per phase.
+
+| Config | Phases | Notes |
+|---|---|---|
+| `recon_only.yaml` | recon | SYN scan from spoofed source IPs |
+| `ssh_brute_only.yaml` | ssh_brute_force | Aliased IPs, accelerating timing profile |
+| `credential_stuffing_only.yaml` | credential_stuffing | Unique pairs tried once each |
+| `log4shell_only.yaml` | log4shell | Decelerating profile (spray, then slow to evade) |
+| `redis_exploit_only.yaml` | redis_lua_escape | Custom profile: slow enum, fast exploit, slow post-exploit |
+| `post_auth_only.yaml` | ssh_post_auth | Valid credentials, system profiling commands |
+| `recon_ssh_log4shell.yaml` | recon -> ssh_brute_force -> log4shell | Largest campaign in the dataset |
+| `full_killchain.yaml` | recon -> credential_stuffing -> ssh_post_auth | Ends in a successful shell |
+| `redis_killchain.yaml` | recon -> redis_lua_escape -> ssh_post_auth | Redis RCE, then SSH pivot |
+
+Run one with `python -m attacks run campaigns/<config>.yaml` (see [Running Attack Campaigns](#running-attack-campaigns)). The shipped `campaigns_v2.db` holds the recorded output of these configs: 60,468 events, of which 30,436 are labeled malicious by time and source-IP matching. The remainder is target-host background and collector activity captured inside the same collection windows, not a benign traffic baseline; the benign baseline comes from `benign_v4.db` at composition time. Per-campaign counts and known limitations are documented in `data/DATASET_README.md`.
 
 ### Redis Lua Sandbox Escape (CVE-2022-0543)
 

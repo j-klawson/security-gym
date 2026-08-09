@@ -61,6 +61,12 @@ Defects:
 
 3. Distributional realism. Three heterogeneous hosts stacked and timestamp-cycled (`composer._cycle_source`) do not reproduce any single host's kernel-event distribution; the benign baseline is a statistical chimera.
 
+Two further defects were found 2026-08-09 while auditing the `campaigns_v2.db` label split. Both are in the collector, not the composer, so they are present in every eBPF collection to date (Isildur campaigns and the frodo/9600baud/hopper baselines alike) and would be reproduced by a re-collection running the current daemon.
+
+4. Byte-reversed IPv4 addresses on `connect` events. `_ip_str` (`server/ebpf_collector.py:226-227`) does `struct.pack("!I", addr)`, but BCC decodes the `u32 daddr` in host byte order, so the network-byte-order address read from `sin->sin_addr` (`:148`) comes out reversed. The port on the same line is correct because it uses the compensating idiom (`struct.unpack("!H", struct.pack("H", event.dport))`, `:300`). Evidence in `campaigns_v2.db`: `connect ... comm=nginx dst=3.0.18.172:8080` is the Log4Shell container at `172.18.0.3` (port correct, address reversed); `113.2.168.192` is `192.168.2.113`. Six of eight distinct connect addresses are reversed; `0.0.0.0` and `8.8.8.8` are invariant under reversal and mask the defect. `parsers/ebpf.py:87-89` derives `src_ip` from this field, so the corruption reaches the column used by time-plus-IP labeling and by the environment's IP-keyed blocklist (`envs/log_stream_env.py:437-449`), meaning a block issued against an IP seen in auth.log cannot match that host's network eBPF events.
+
+5. `accept` events carry no peer address. `sys_enter_accept4` submits `pid`/`uid`/`comm` only and never reads `upeer_sockaddr` (`server/ebpf_collector.py:156-166`); `_on_accept` emits no `dst=` (`:306-312`). At syscall entry the kernel has not yet populated the peer address, so the fix needs an entry/exit probe pair with the pointer stashed in a `BPF_HASH` keyed on `pid_tgid`. Measured in `campaigns_v2.db`: all 619 malicious `ebpf_network` events are `accept` with NULL `src_ip`; all 603 addressed events are `connect` and benign. Inbound connections, the direction carrying attacker identity, are the direction with no address, so every malicious network label rests on time-window matching alone and no IP-keyed block can suppress one. This qualifies the "`ebpf_network` is the control case" statement under defect 1: benign network events do pass the learner gate, but on a byte-reversed address.
+
 Proposed fix and its limits: a single-host collect-with-attacks (e.g., 30 days on Isildur) directly fixes (2) and removes the eBPF-transplant path that manufactures (1)'s artifact. It is a precondition but not sufficient for (1): kernel events still require a defined session (process-tree rooted at the session leader, sshd, or login). It does not address (3) unless the host carries realistic workload; Isildur is a frozen, near-idle Debian 11 VM, so a long idle collection trades the chimera problem for a workload-poverty problem (attacks trivially separable from a near-silent background). Coherence versus workload-realism is the central tension.
 
 Recommended sequencing (diagnose before re-collecting):
@@ -68,6 +74,15 @@ Recommended sequencing (diagnose before re-collecting):
 - [ ] Namespace eBPF `pid`/`ppid` per source (collection host) so ancestry does not collide across the merge.
 - [ ] Replace the synthetic per-campaign eBPF session with a process-tree-rooted session applied symmetrically to benign and attack eBPF. This also removes the label correlation from rlsecd's learner-step schedule, which keys on the same `session_id` (see the measured evidence under defect 1); pairs with the rlsecd-side cadence fix, either alone leaves a defect.
 - [ ] Re-run Exp 13 on the corrected corpus and measure how much of the 60% MAE reduction survives. Survival implies the current data is salvageable and re-collection is a realism upgrade; collapse mandates re-collection, and the collapse is itself a finding.
+
+Collector fixes (defects 4 and 5; independent of the re-collection decision, and prerequisites for it):
+
+- [ ] Fix `_ip_str` byte order in `server/ebpf_collector.py` (`struct.pack("<I", addr)` or `socket.inet_ntoa(struct.pack("I", addr))`). Add a unit test with a known non-palindromic address; `8.8.8.8` and `0.0.0.0` are invariant under reversal and will pass either way.
+- [ ] Capture the `accept4` peer address: stash `upeer_sockaddr` at `sys_enter_accept4` in a `BPF_HASH` keyed on `pid_tgid`, read it at `sys_exit_accept4`, emit `src=` on the accept line. Extend `parsers/ebpf.py` to populate `src_ip` from it.
+- [ ] Redeploy the corrected collector to Isildur and the three baseline hosts; bump the ISILDUR_READY snapshot.
+- [ ] Decide the remediation path for existing collections: re-collect, or apply a documented byte-reversal pass to `ebpf_network` `connect` addresses in `campaigns_v2.db` and `benign_v4.db`. A reversal pass cannot recover the missing `accept` addresses, so it is a partial fix and must be disclosed as such if the v4 corpus is retained.
+- [ ] Re-check whether any published result or claim depends on `ebpf_network` addresses. The 619 malicious network events are labeled by time window alone, so the labeling is not wrong, but claims about IP-level attribution or blocking efficacy on the network channel are not supported by this data.
+- [ ] Assess dataset blast radius: the v4.1 deposit (DOI 10.5281/zenodo.21763493) ships both defects inside the eBPF events. Decide whether this warrants a dataset erratum or a corrected version, and coordinate with the downstream-consumer audit already open under "V4 Published-Archive Remediation".
 
 Open decisions (deferred until the blocker is cleared):
 
@@ -277,6 +292,17 @@ Hybrid mode currently pre-hashes string fields (command, IP, path) into the obse
 ## Open Questions
 
 - [ ] Revisit the `true_risk` score (the GVF-like auxiliary risk target, `_RISK_MAP`/`_ground_truth_risk` → risk-score MSE reward term). `include_risk_reward` now defaults to `False` (commit a5ceae9), so the risk-prediction head is effectively dormant. Decide whether `true_risk` should be removed entirely (ground-truth field, `Box(1)` risk_score action component, `risk_reward` term, and the label-validator range check) or retained as an opt-in auxiliary task. Touch points: `envs/log_stream_env.py`, `envs/log_stream_env_hybrid.py`, `adapters/scan_stream.py`, `scripts/validate_labels.py`, and tests in `tests/test_env.py` / `tests/test_scan_stream.py`.
+
+## Campaign Corpus Documentation (2026-08-09)
+
+Audit of `campaigns_v2.db` prompted by the question of why only half its events are labeled malicious. The answer (campaign collection captures the whole host inside the window; the labeler marks only time-plus-IP matches) was undocumented, as were several corpus properties a reader would reasonably assume otherwise.
+
+- [x] README: added "Campaign Configurations" section enumerating all 9 configs with phase sequences; corrected "Two kill chain campaigns" to three (`recon_ssh_log4shell` was omitted); stated the 60,468 / 30,436 split and that the remainder is host background, not a benign baseline.
+- [x] DATASET_README: added a "Campaigns" section with the per-campaign table (10 runs, 9 configs, aborted `recon_only` run flagged), a "Label composition" subsection explaining the benign half, and a "Known limitations" list (75-minute total capture, deterministic exploit outcomes, timer-driven phase progression, the TA0043 mislabel, the two eBPF network collector defects).
+- [x] CLAUDE.md: added a "Campaign Corpus Characteristics" entry with the same facts.
+- [ ] Decide the ATT&CK tactic correction. `full_killchain.yaml` and `redis_killchain.yaml` tag the recon phase `TA0043` (Reconnaissance); `recon_only` and `recon_ssh_log4shell` tag the identical T1046 SYN scan `TA0007` (Discovery). T1046 (Network Service Discovery) is a Discovery technique, so the two kill-chain configs are wrong and the README table is right. Fixing the YAML is one line each, but it desynchronizes the configs from the `mitre_tactics` values already written into `campaigns_v2.db` and shipped in the v4.1 deposit, so it carries the same re-collect-or-document choice as the collector defects (Phase 14 items 4 and 5). Options: fix YAML and document the DB discrepancy, fix both via a migration on the DB, or defer until a re-collection.
+- [ ] Fold the new DATASET_README limitations into the next dataset version. The file ships inside the Zenodo deposit, so the current 4.1 record (DOI 10.5281/zenodo.21763493) still lacks them; pair this with the known BibTeX self-citation flaw already logged under "V4 Published-Archive Remediation".
+- [ ] Mirror the campaign documentation into `data/HF_DATASET_CARD.md` and upload, so the hub card does not drift from the repo again.
 
 ## Housekeeping
 
