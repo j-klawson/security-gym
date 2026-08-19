@@ -7,7 +7,9 @@
 [![Dataset DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18901541.svg)](https://doi.org/10.5281/zenodo.18901541)
 [![HF Dataset](https://img.shields.io/badge/%F0%9F%A4%97-Dataset-blue)](https://huggingface.co/datasets/j-klawson/security-gym-v4)
 
-Gymnasium-compatible environment for security defense research. The agent observes raw text streams — like `tail -N` on log files and kernel event channels — and takes defensive actions (block, throttle, alert, isolate) that causally affect future observations.
+Gymnasium-compatible replay environment for security defense research. Labeled log and kernel event streams recorded from a live vulnerable host are replayed without episode boundaries. The agent observes raw text (like `tail -N` on log files and kernel event channels) and takes defensive actions (block, throttle, alert, isolate) that causally suppress future observations.
+
+Security-Gym is trace-driven: the telemetry is recorded, not produced by a dynamics model. The simulated component is the defense layer (blocklist, throttle list, isolation mode), which masks the stream in response to the agent's actions. The loop is therefore closed on observability but not on adversary behavior, since blocking an attacker suppresses that attacker's events while the recorded attacker does not change tactics in response. Throughout this repository, "environment" refers to the software and its Gymnasium API, "corpus" or "dataset" to the released v4.1 data, and "benchmark" to the evaluation protocol together with the baseline results in [Baselines](#baselines).
 
 Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-lived agents that continually learn from non-stationary sensory streams.
 
@@ -441,7 +443,7 @@ stream:
   seed: 42
   benign:
     db: data/benign_v4.db
-    ebpf_sample_rate: 0.242    # 24.2% — simulates single busy server
+    ebpf_sample_rate: 0.242    # 24.2%: approximates a single host's event rate
   attacks:
     db: data/campaigns_v2.db
     campaigns_per_day: 3.0

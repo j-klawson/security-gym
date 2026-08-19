@@ -2,6 +2,33 @@
 
 Current action items for security-gym development.
 
+## Action Space — Control Semantics (2026-08-19, BLOCKS PUBLICATION)
+
+Feedback at the RLC 2026 Continual RL workshop (Montreal, 2026-08-15) identified the action space and the absence of control baselines as the gap between the current environment and a publishable result. This section covers the first; the control benchmark follows below. Both precede Phase 12 (Analysis and Publication).
+
+The core problem is that the discrete action is graded but frequently inert. `_apply_action` (`src/security_gym/envs/log_stream_env.py:433-451`) binds every stateful action to `self._current_row["src_ip"]`, so throttle, block, and unblock are silent no-ops whenever the current event carries no source IP, while `_compute_reward` (`:390-431`) grades the action from ground truth alone and never checks whether the action changed the defense state. Measured on the shipped streams: 93.50% of `exp_30d_heavy_v4` events (20,112,710 of 21,511,208) and 95.40% of `exp_7d_brute_v4` events have NULL `src_ip`. Within the 30-day stream, 11.88% of malicious events (72,409 of 609,520) pay block's +1.0 with no containment whatsoever, and 95.88% of benign events (20,040,301 of 20,901,688) pay block's -1.0 for dropping nothing. On roughly nine steps in ten the environment is therefore a per-event classifier with a reward table attached, not a control problem, which is consistent with the detection-shaped baselines table in README.md.
+
+- [ ] Decide how actions bind to targets. Options: keep the implicit current-event binding and document it, add an explicit target field to the action Dict (block an IP seen earlier, which requires the agent to carry or observe the candidate set), or route events with no `src_ip` to a session or process key so kernel events become actionable. This is the decision the other items depend on
+- [ ] Make reward reflect effect. At minimum, do not pay the full action reward for a state-changing action that changed no state; decide whether an inert block scores zero, a small cost for a wasted action, or the current value. Any change here invalidates the existing baseline numbers and must be versioned as an env contract change
+- [ ] `unblock` is unreachable under the default configuration. Actions key on the current event's IP, and default `block_visibility="drop"` means a blocked IP never surfaces again, so no step can ever target it. `block_visibility="deny_log"` and `block_ttl` (v0.5.0) exist precisely to close this loop but are default-off. Decide whether the published default flips, and state which configuration the reported results use
+- [ ] `isolate` is absorbing. It sets `_is_isolated = True` (`:451`) and nothing clears it except `reset()`; `unblock` only discards from the IP sets. On a continuing stream with no episode boundary, a single isolate permanently ends network observability. Either add a de-isolation path (a dedicated action, a TTL analogous to `block_ttl`, or `unblock` clearing isolation when the event has no IP) or document isolation as terminal and justify it
+- [ ] Resolve the dormant continuous component. `include_risk_reward` defaults to `False` (`:168`), so the `Box(1)` risk score half of the Dict action carries no reward signal at all. Either restore it in the published configuration, remove it from the action space, or document it as an opt-in auxiliary task. Cross-referenced under "Open Questions" below
+- [ ] Decide whether non-IP defense primitives are in scope before the paper freezes the action space (kill process, quarantine file, disable account). The eBPF process and file channels carry most malicious volume yet admit no action that targets a process or a file
+- [ ] Sequence Phase 11 (`report` / SOC escalation, ROADMAP.md) against this work. It expands `Discrete(6)` to `Discrete(7)`, so it should land before the action space is frozen for publication or be explicitly deferred to future work
+- [ ] The defense-state observability decision (see the 2026-08-15 section below) is now a blocker rather than an open question: it determines what a control agent can condition on, and the choice between representing state and querying it changes either the observation space or the action space
+
+## Control Benchmark — Protocol, Metrics, and Learning Baselines (2026-08-19, BLOCKS PUBLICATION)
+
+The README baselines table reports precision, recall, and F1 for per-event malicious classification plus mean reward, which measures detection rather than control; the `rlsecd` row reports F1 0.979 with no mean reward at all. No learning agent has yet been scored on the control objective, and no evaluation protocol is pinned anywhere in the repository, so a third party cannot reproduce a comparable number.
+
+- [ ] Define control metrics and implement them in the env or an evaluation wrapper. Candidates: containment (fraction of a campaign's events after the first effective block that are actually suppressed), time to containment (events and stream-seconds from campaign start to effective block), collateral (benign events dropped, already tracked as `events_dropped` but not attributed to benign against malicious), recovery (steps from a false block to the corresponding unblock, meaningful only once unblock is reachable), isolation usage, and drift in each across the 90-day and 365-day streams
+- [ ] Pin the evaluation protocol in-repo as a config plus a runner script, not as prose: which streams, step budget per stream, seed count, warm-up handling, and which statistics are reported (mean, standard deviation, and effect size where two conditions are compared). This is what makes "benchmark" an accurate word for the package
+- [ ] Add at least one learning control baseline evaluated under that protocol. The current `examples/` set is a random policy, two rule-based heuristics, and a pass-only floor; `rlsecd` supplies prediction heads rather than a control policy. A streaming SARSA or equivalent over the same observation would establish whether the control problem is learnable at all
+- [ ] Report the heuristic agents under the control metrics as well, so the comparison is like for like. The existing threshold and keyword numbers were produced under detection metrics and will not transfer
+- [ ] Dependency: "Configurable Per-Action Rewards" (below) is now a prerequisite. Without reward-matrix overlays, the sensitivity of any baseline ordering to the reward specification cannot be measured, and a control benchmark whose ordering is an artifact of twelve hardcoded constants will not survive review
+- [ ] Dependency: `system_stats` is a hardcoded constant on every step (`envs/log_stream_env.py:363`), so the only non-event channel is uninformative. Populate or remove it before the observation space is frozen
+- [ ] State explicitly which observation mode, block-recovery configuration, and reward specification each published number was produced under. Results reported before these decisions settle will need regeneration
+
 ## CI Lint Failure — Ruff Rule-Set Drift ✅ (2026-08-08)
 
 The `lint` job failed on all seven pushes from 2026-07-26 onward (188 errors) while `test` and `security` passed. Cause: no rule selection declared in `pyproject.toml` plus an unbounded `ruff>=0.4.0` dev pin, so CI picked up ruff 0.16.1, which widened the implicit default rule set. Fix is configuration-only; no source changed. Detail in ROADMAP.md "CI Correction — Ruff Default Rule-Set Drift".
@@ -288,6 +315,36 @@ Hybrid mode currently pre-hashes string fields (command, IP, path) into the obse
 - [ ] Keep the current Hybrid (pre-hashed) mode as a clearly-documented convenience option
 - [ ] Offer the MurmurHash3 hashing as an optional agent-side wrapper (the `features/hasher.py` utility already exists); env emits raw, agent opts in
 - [ ] Re-run baselines under raw-structured mode to confirm parity with the pre-hashed convenience path
+
+## Configurable Per-Action Rewards
+
+The 12-cell action reward matrix is hardcoded as two module-level dicts, `_ATTACK_REWARDS` and `_BENIGN_REWARDS` (`src/security_gym/envs/log_stream_env.py:56-72`), read directly by `_compute_reward` (`:416-418`) with no config indirection. The `reward_config` constructor dict (`:167-171`, threaded through the hybrid env at `envs/log_stream_env_hybrid.py:82,94`) exposes only four keys: `include_risk_reward`, `risk_weight`, `benign_drop_penalty`, `malicious_drop_reward`. Consequently the cost asymmetry that drives every policy result (block-benign -1.0 against block-attacker +1.0, isolate-benign -2.0) cannot be varied without editing the package, so sensitivity of the baseline ordering to the reward specification cannot be measured. The two workarounds are both unsatisfactory: mutating the module dicts is process-global and leaves no record in any per-run config, and a `RewardWrapper` can only reconstruct the action term exactly under the default `block_visibility="drop"`, since `_build_info` (`:453-472`) does not expose `_current_denied`.
+
+- [ ] Accept `attack_rewards` and `benign_rewards` overlays in `reward_config`; merge over the module dicts in `__init__` (`{**_ATTACK_REWARDS, **cfg.get("attack_rewards", {})}`) and read from instance attributes in `_compute_reward`. Module dicts remain the defaults, so unconfigured behaviour stays byte-for-byte identical
+- [ ] Validate overlay keys against the six action constants; reject unknown keys rather than silently ignoring them (the current `.get(action, 0.0)` fallback would mask a typo as a zero reward)
+- [ ] Tests: default parity (unconfigured env matches current rewards exactly), partial overlay (one cell changed, others inherited), rejection of unknown keys, hybrid env inheritance
+- [ ] Decide whether `_RISK_MAP` (`:45-52`, the attack_stage → `true_risk` mapping) is included in the same mechanism; it is also hardcoded, but is entangled with the dormant risk-reward term below
+- [ ] Record the resolved reward matrix in run metadata so published results state their reward specification rather than implying the package default
+
+## Defense-State Observability — In-Env Representation vs. Agent-Side Query (2026-08-15)
+
+Open design decision: should the effects of the agent's own actions be represented in the observation, or should the agent be required to obtain them itself the way an operator would, for example by issuing command-line queries (`iptables -L`, `fail2ban-client status`, `nft list ruleset`)?
+
+Current behaviour: the defense state is entirely outside the observation. `blocked_ips`, `throttled_ips`, `is_isolated`, and `events_dropped` are returned only in the `info` dict (`src/security_gym/envs/log_stream_env.py:453-471`); the observation space is six event channels plus `system_stats` in text mode (`:177-188`) and three text plus three structured eBPF channels plus `system_stats` in hybrid mode (`envs/log_stream_env_hybrid.py:105-122`). An agent therefore has no observable record of what it has already blocked or throttled and must maintain that state internally. Reading it from `info` is available but questionable under temporal uniformity, since the same dict also carries `ground_truth` (`is_malicious`, `attack_type`, `attack_stage`, `campaign_id`, `true_risk`), so an `info`-reading policy sits adjacent to the label channel.
+
+The only existing partial answer is `block_visibility="deny_log"` (v0.5.0), which surfaces a blocked IP's events as ground-truth-blind `"[FIREWALL DENY] "` lines. That is indirect and incomplete: it reveals a block only when the blocked IP happens to emit another event, covers neither throttle nor isolation, and appears only in the text channels (the structured eBPF channels carry no deny marker).
+
+Options:
+
+- Represent it. Add a defense-state component to the observation (a text channel resembling firewall/fail2ban status output, or a fixed-width numeric encoding such as blocklist size, throttle-list size, isolation flag, and time since last state change). Cheap, differentiable, and makes the block/unblock loop directly learnable, but it hands the agent a curated summary no real host offers for free.
+- Make the agent query it. Extend the action space with introspection actions whose results appear in a command-output channel on the following step. Faithful to the operator setting and consistent with the "ordinary experience" principle, at the cost of a larger action space, a delayed-observation credit-assignment problem, and a synthetic command-output surface that the replay corpus contains no ground truth for.
+- Neither. Keep the state hidden and treat internal tracking of one's own actions as part of the problem. Defensible under partial observability, but it makes `unblock` and de-escalation hard to learn and leaves `info` as the only escape hatch.
+
+- [ ] Decide among the three options; record the rationale in ROADMAP.md, since it changes either the observation space or the action space and therefore the published env contract
+- [ ] If querying is chosen, decide whether the query is a distinct action index or a modifier on the existing `Discrete(6)`, and whether responses are synthesized by the env or replayed from collected host state
+- [ ] If representation is chosen, decide text against numeric encoding, and whether hybrid mode mirrors the text form or receives a structured equivalent (the `deny_log` asymmetry above is the precedent to avoid repeating)
+- [ ] Either way, state explicitly in the docs whether `info` is intended for agent consumption or for evaluation only; it currently mixes defense state with ground-truth labels
+- [ ] Related: `system_stats` is documented as `[load_avg, mem_used_frac, disk_used_frac]` but is the hardcoded constant `[0.5, 0.3, 0.2]` on every non-terminal step (`envs/log_stream_env.py:363`, `envs/log_stream_env_hybrid.py:219`, `adapters/scan_stream.py:219`), so it carries no information. A query-based design would give it a real source; a representation-based design should either populate or remove it
 
 ## Open Questions
 
