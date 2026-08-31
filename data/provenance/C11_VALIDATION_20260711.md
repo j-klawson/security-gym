@@ -27,7 +27,7 @@ Set B (RLC camera-ready `rlc/main.tex` Table 1, `\label{tab:baselines}`; also `d
 
 | # | Evidence | Location | Date | Bears on |
 |---|----------|----------|------|----------|
-| E1 | Recovered stdout of a full-stream benchmark run | `~/repos/research/rlsecd/logs/benchmark_ruleagents_v4_30d.log` (mtime 2026-05-28 12:00:47 EDT; SHA256 `6766545e...40a9a62`); verbatim copy committed as `rlsecd-log-20260528_benchmark_30d_v4_fullstream.txt` in this directory | 2026-05-28 | Set B |
+| E1 | Recovered stdout of a full-stream benchmark run | `~/repos/research/rlsecd/logs/hopper/benchmark_ruleagents_v4_30d.log` (moved from `logs/` in rlsecd's 2026-08-31 machine-split reorganization, commit `d0cb965`; mtime 2026-05-28 12:00:47 EDT; SHA256 `6766545e...40a9a62`); verbatim copy committed as `rlsecd-log-20260528_benchmark_30d_v4_fullstream.txt` in this directory | 2026-05-28 | Set B |
 | E2 | Bytecode cache write for `examples/` agent modules | `examples/__pycache__/{keyword,random,threshold}_agent.cpython-313.pyc`, all mtime 2026-05-28 08:27:55 EDT | 2026-05-28 | Set B run start time |
 | E3 | security-gym commit `f4ba8c0` "docs: fill in real baseline metrics from v4 benchmark runs"; message states "30d heavy stream (1M steps, all 5 attack types)" and lists the pass-only, random, and threshold(5) values of Set A verbatim | this repository | 2026-04-02 08:14 EDT | Set A |
 | E4 | security-gym commit `84cc3a6` "feat: add multi-channel keyword heuristic agent baseline"; message states "Results on exp_30d_heavy_v4.db (1M steps): precision=0.987, recall=0.013, F1=0.025" | this repository | 2026-04-03 08:58 EDT | Set A |
@@ -47,7 +47,8 @@ steps, the full stream) and no recoverable `--seed` (the argparse default is
 42). The interpreter was `~/repos/research/rlsecd/.venv/bin/python` (the
 `UserWarning` in the log names that venv path), the working directory was this
 repository (the DB path is relative), and stdout was redirected to
-`~/repos/research/rlsecd/logs/benchmark_ruleagents_v4_30d.log`. The run
+`~/repos/research/rlsecd/logs/benchmark_ruleagents_v4_30d.log` (the file now
+lives at `logs/hopper/benchmark_ruleagents_v4_30d.log`; rlsecd `d0cb965`). The run
 started at 08:27:55 EDT on 2026-05-28 (E2, first-import bytecode write) and
 finished at 12:00:47 EDT (log mtime). The per-agent elapsed times printed in
 the log sum to 12,772.1 s (3 h 32 m 52 s), which matches that window exactly.
@@ -99,9 +100,12 @@ The v7 draft caption is wrong; the other two are correct.
 Yes. The full stdout of the 2026-05-28 run survived at
 `~/repos/research/rlsecd/logs/benchmark_ruleagents_v4_30d.log` (it was written
 into the rlsecd repository because the run borrowed that project's virtual
-environment, and rlsecd's `logs/` directory is not tracked by git, which is
-why repository searches missed it). A verbatim copy with a provenance header
-is committed alongside this report as
+environment, and rlsecd's `logs/` directory was not tracked by git at the
+time, which is why repository searches missed it). The original has since
+been committed in rlsecd (`ab56844`) and moved to
+`logs/hopper/benchmark_ruleagents_v4_30d.log` in the 2026-08-31 machine-split
+reorganization (`d0cb965`); its SHA256 is unchanged. A verbatim copy with a
+provenance header is committed alongside this report as
 `rlsecd-log-20260528_benchmark_30d_v4_fullstream.txt`. The full-stream re-run
 contemplated by item C11 is therefore not required to back Table 1. No
 artifact survives for Set A; if the README table is ever to be regenerated
