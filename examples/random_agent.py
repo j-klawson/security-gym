@@ -15,7 +15,6 @@ import argparse
 import time
 
 import gymnasium as gym
-import numpy as np
 
 import security_gym  # noqa: F401 — registers envs
 
@@ -24,7 +23,7 @@ def run(db_path: str, max_steps: int | None = None, seed: int = 42) -> dict:
     """Run a random agent and return metrics."""
     env = gym.make("SecurityLogStream-Text-v0", db_path=db_path)
     obs, info = env.reset(seed=seed)
-    rng = np.random.default_rng(seed)
+    env.action_space.seed(seed)
 
     total_reward = 0.0
     steps = 0
@@ -35,10 +34,10 @@ def run(db_path: str, max_steps: int | None = None, seed: int = 42) -> dict:
     t0 = time.perf_counter()
 
     while True:
-        action = {
-            "action": int(rng.integers(0, 6)),
-            "risk_score": rng.uniform(0, 10, size=(1,)).astype(np.float32),
-        }
+        # Sample the declared action space rather than hardcoding its shape, so
+        # this floor stays valid as the space changes (it gained a `target`
+        # component in 0.6.0). Seeded in run() for reproducibility.
+        action = env.action_space.sample()
 
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward

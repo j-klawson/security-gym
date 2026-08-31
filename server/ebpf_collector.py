@@ -23,12 +23,16 @@ import time
 from ctypes import c_char, c_uint
 from datetime import datetime, timezone
 
+_BCC_MISSING_MSG = "ERROR: BCC not installed. Run: sudo apt install bpfcc-tools python3-bpfcc"
+
 try:
     from bcc import BPF  # type: ignore[import-not-found]
 except ImportError:
-    print("ERROR: BCC not installed. Run: sudo apt install bpfcc-tools python3-bpfcc",
-          file=sys.stderr)
-    sys.exit(1)
+    # Reported by main() rather than raised at import time, so the module's pure
+    # helpers (_ip_str, _decode_flags) remain importable and unit-testable on
+    # hosts without BCC. The daemon still refuses to start, with the same
+    # message and exit status as before.
+    BPF = None  # type: ignore[assignment]
 
 
 # ── BPF C programs ───────────────────────────────────────────────────
@@ -223,8 +227,27 @@ def _now_iso() -> str:
 
 
 def _ip_str(addr: int) -> str:
-    """Convert a network-byte-order uint32 to dotted-quad string."""
-    return ".".join(str(b) for b in struct.pack("!I", addr))
+    """Convert a host-byte-order uint32 IPv4 address to a dotted-quad string.
+
+    ``bpf_probe_read_user`` copies the four raw bytes of ``sin_addr`` (network
+    byte order by definition) into a ``u32``, and BCC decodes that field with
+    native endianness, so the value arrives here already in host byte order.
+    Packing it native (``"="``) therefore reproduces the original byte sequence.
+
+    Packing it big-endian (``"!"``) swaps a second time and reverses the
+    address, which is the defect this replaces: ``172.18.0.3`` was emitted as
+    ``3.0.18.172`` and ``192.168.2.20`` as ``20.2.168.192``. Two swaps in the
+    same direction (memory to int, then int to memory) do not cancel. The port
+    on the same output line uses the complementary idiom (pack native, unpack
+    big-endian), which applies exactly one swap and was always correct.
+
+    Correct on either host endianness: on a big-endian host the raw copy leaves
+    the value in network order, which is also native order there.
+
+    Fixed 2026-08-28. Data collected before that date carries reversed
+    addresses; see data/provenance/EBPF_IP_BYTE_ORDER_20260828.md.
+    """
+    return ".".join(str(b) for b in struct.pack("=I", addr))
 
 
 def _decode_flags(flags: int) -> str:
@@ -399,6 +422,10 @@ def main() -> None:
         help="Collection duration in seconds (default: run until SIGTERM/SIGINT)",
     )
     args = parser.parse_args()
+
+    if BPF is None:
+        print(_BCC_MISSING_MSG, file=sys.stderr)
+        sys.exit(1)
 
     if os.geteuid() != 0:
         print("ERROR: eBPF collector requires root. Run with sudo.", file=sys.stderr)

@@ -34,6 +34,46 @@ _VALID_BLOCK_VISIBILITY = (BLOCK_VISIBILITY_DROP, BLOCK_VISIBILITY_DENY_LOG)
 # no is_malicious signal into the observation (models a real firewall deny-log).
 DENY_LOG_PREFIX = "[FIREWALL DENY] "
 
+# Defense-state observation channel (opt-in via defense_state_obs=True).
+# Reports the agent's own control state: which sources it has blocked or
+# throttled, whether the host is isolated, how much traffic those controls
+# have suppressed, and whether the source of the current event is already
+# under a control. Every field is a consequence of the agent's own actions,
+# so the channel leaks no ground truth. Text mode renders operator-style
+# status output; hybrid mode encodes the same facts as a fixed-width vector.
+DEFENSE_STATE_COLS = 6
+DEFENSE_STATE_MAX_LISTED = 20  # addresses enumerated in the text rendering
+
+# Explicit action targeting (opt-in via target_slate_size > 0).
+#
+# Without it every stateful action binds to the current event's src_ip, so the
+# agent can only act on the host the stream happens to be showing it. That makes
+# two things impossible: acting on evidence in a channel that carries no address
+# (a suspicious execve in process_events, attributable to a host seen earlier in
+# auth_log), and naming an already-blocked address for release, since a blocked
+# host's events stop arriving.
+#
+# Targeting adds a `target` component to the action: index 0 keeps the current
+# event's source, and 1..N name a slot in an observable slate of addresses seen
+# anywhere in the stream. Addresses under a control are pinned in their slot, so
+# they stay nameable for as long as they are blocked or throttled.
+TARGET_CURRENT_EVENT = 0  # target index meaning "the source of the current event"
+TARGET_SLATE_COLS = 3     # structured encoding: [addr_hash, is_blocked, is_throttled]
+
+# Defaults for the two observability/targeting features. Both are on: an agent
+# that cannot see its own controls has no state space, and one that cannot name
+# a host cannot act on the 93.5% of events that carry no address. The
+# pre-targeting contract is preserved by the `rlc2026-camera-ready` tag rather
+# than by a flag. Pass 0 / False to reconstruct it.
+#
+# 64 slots is sized from the corpus: 200 to 400 distinct addresses are live per
+# 5,000-addressed-event window, so 64 slots hold roughly 600 to 1,300 addressed
+# events of history, about 10,000 to 20,000 stream steps. Wide enough for
+# cross-channel correlation inside an attack episode, narrow enough to keep the
+# action head at Discrete(65).
+DEFAULT_TARGET_SLATE_SIZE = 64
+DEFAULT_DEFENSE_STATE_OBS = True
+
 # Action indices
 ACTION_PASS = 0
 ACTION_ALERT = 1
@@ -96,7 +136,15 @@ class SecurityLogStreamEnv(gymnasium.Env):
     The agent observes raw text streams (log files + kernel events) and
     takes defensive actions that causally affect future observations.
 
-    Observation: Dict of Text channels (tail of recent events) + Box system stats.
+    Observation: Dict of Text channels (tail of recent events) + Box system stats,
+    plus an optional ``defense_state`` Text channel (``defense_state_obs=True``)
+    reporting the agent's own control state: blocked and throttled sources,
+    isolation, suppressed-event count, event-seconds since the state last
+    changed, and whether the source of the current event is already under a
+    control. Default-off, so the legacy observation space is unchanged. The
+    channel is ground-truth-blind; every field is a consequence of the agent's
+    own actions. Without it the agent has no observable record of what it has
+    already done and must carry that state internally.
     Action: Dict of Discrete(6) action + Box(1) risk score.
     Reward: Asymmetric action costs + risk score MSE + ongoing consequence feedback.
 
@@ -146,6 +194,8 @@ class SecurityLogStreamEnv(gymnasium.Env):
         render_mode: str | None = None,
         block_visibility: str = BLOCK_VISIBILITY_DROP,
         block_ttl: float | None = None,
+        defense_state_obs: bool = DEFAULT_DEFENSE_STATE_OBS,
+        target_slate_size: int = DEFAULT_TARGET_SLATE_SIZE,
     ):
         super().__init__()
         self.db_path = Path(db_path)
@@ -163,6 +213,16 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self.block_visibility = block_visibility
         self.block_ttl = float(block_ttl) if block_ttl is not None else None
 
+        # Defense-state observability (opt-in; default preserves the legacy
+        # observation space exactly, so existing agents and results are unaffected)
+        self.defense_state_obs = bool(defense_state_obs)
+
+        # Explicit action targeting (opt-in; 0 keeps the implicit current-event
+        # binding and leaves the action space unchanged)
+        if target_slate_size < 0:
+            raise ValueError(f"target_slate_size must be >= 0, got {target_slate_size}")
+        self.target_slate_size = int(target_slate_size)
+
         # Optional reward weight overrides
         self._reward_config = reward_config or {}
         self._include_risk_reward: bool = self._reward_config.get("include_risk_reward", False)
@@ -172,9 +232,12 @@ class SecurityLogStreamEnv(gymnasium.Env):
 
         # ── Observation space ────────────────────────────────────────
         # Use printable ASCII charset (log lines contain spaces, punctuation, etc.)
-        _printable = "".join(chr(i) for i in range(32, 127))
+        # Printable ASCII plus newline: every text channel joins its ring buffer
+        # with "\n", so a charset without it makes observation_space.contains()
+        # false for any multi-line channel (the passive env checker warns on it).
+        _printable = "\n" + "".join(chr(i) for i in range(32, 127))
         text_space = spaces.Text(min_length=0, max_length=max_chars, charset=_printable)
-        self.observation_space = spaces.Dict({
+        obs_spaces: dict[str, spaces.Space] = {
             # Log event streams
             "auth_log": text_space,
             "syslog": text_space,
@@ -185,13 +248,24 @@ class SecurityLogStreamEnv(gymnasium.Env):
             "file_events": text_space,
             # Lightweight numeric stats
             "system_stats": spaces.Box(0, np.inf, shape=(3,), dtype=np.float32),
-        })
+        }
+        if self.defense_state_obs:
+            # The agent's own control state, rendered as command-style output
+            obs_spaces["defense_state"] = text_space
+        if self.target_slate_size:
+            # The addressable slate. Observable by construction: an index into a
+            # list the agent cannot see would not be learnable.
+            obs_spaces["target_slate"] = text_space
+        self.observation_space = spaces.Dict(obs_spaces)
 
         # ── Action space ─────────────────────────────────────────────
-        self.action_space = spaces.Dict({
+        action_spaces: dict[str, spaces.Space] = {
             "action": spaces.Discrete(6),
             "risk_score": spaces.Box(0.0, 10.0, shape=(1,), dtype=np.float32),
-        })
+        }
+        if self.target_slate_size:
+            action_spaces["target"] = spaces.Discrete(self.target_slate_size + 1)
+        self.action_space = spaces.Dict(action_spaces)
 
         # ── Internal state ───────────────────────────────────────────
         self._store: EventStore | None = None
@@ -218,6 +292,19 @@ class SecurityLogStreamEnv(gymnasium.Env):
         # Whether the current observation is a surfaced firewall deny-log entry
         # (deny_log visibility). Drives the reward double-count suppression.
         self._current_denied: bool = False
+
+        # Event-time of the most recent defense-state change, for the
+        # "time under the current controls" field of the defense-state channel
+        self._last_defense_change: datetime | None = None
+
+        # Addressable target slate (empty unless target_slate_size > 0)
+        self._target_slate: list[str | None] = [None] * self.target_slate_size
+        self._slate_seen: dict[str, int] = {}      # address -> recency tick
+        self._addr_label: dict[str, bool] = {}     # address -> last observed is_malicious
+        self._slate_tick: int = 0
+        self._resolved_target: str | None = None   # address the last action acted on
+        self._target_explicit: bool = False        # last action named a slate slot
+        self._target_effective: bool = False       # last action changed the defense state
 
         # Ongoing consequence accumulator for blocked/throttled events
         self._ongoing_reward: float = 0.0
@@ -289,6 +376,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
                     # Ban lapsed: release the IP and deliver this event live.
                     self._blocked_ips.discard(src_ip)
                     self._block_times.pop(src_ip, None)
+                    self._stamp_defense_change()
                 else:
                     self._events_dropped += 1
                     self._accumulate_consequence(row)
@@ -362,12 +450,21 @@ class SecurityLogStreamEnv(gymnasium.Env):
         # In replay mode these are synthetic/placeholder
         obs["system_stats"] = np.array([0.5, 0.3, 0.2], dtype=np.float32)
 
+        if self.defense_state_obs:
+            obs["defense_state"] = self._render_defense_state()
+        if self.target_slate_size:
+            obs["target_slate"] = self._render_target_slate()
+
         return obs
 
     def _empty_observation(self) -> dict[str, Any]:
         """Build an empty observation for exhausted/reset states."""
         obs: dict[str, Any] = {ch: "" for ch in _CHANNELS}
         obs["system_stats"] = np.zeros(3, dtype=np.float32)
+        if self.defense_state_obs:
+            obs["defense_state"] = self._render_defense_state()
+        if self.target_slate_size:
+            obs["target_slate"] = self._render_target_slate()
         return obs
 
     @staticmethod
@@ -411,11 +508,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
             risk_reward = 0.0
         else:
             # 1. Action reward (asymmetric)
-            is_mal = ground_truth["is_malicious"]
-            if is_mal:
-                action_reward = _ATTACK_REWARDS.get(action, 0.0)
-            else:
-                action_reward = _BENIGN_REWARDS.get(action, 0.0)
+            action_reward = self._action_reward(action, ground_truth)
 
             # 2. Risk score reward (negative MSE)
             true_risk = float(ground_truth["true_risk"])
@@ -430,25 +523,281 @@ class SecurityLogStreamEnv(gymnasium.Env):
 
         return action_reward + risk_reward + consequence_reward
 
-    def _apply_action(self, action_dict: dict[str, Any], src_ip: str | None) -> None:
-        """Apply the agent's action to update defense state."""
-        action = int(action_dict["action"])
+    def _observe_address(self, row: dict[str, Any]) -> None:
+        """Record an observed event's source address in the target slate.
 
-        if action == ACTION_THROTTLE and src_ip:
-            self._throttled_ips.add(src_ip)
-        elif action == ACTION_BLOCK_SOURCE and src_ip:
-            self._blocked_ips.add(src_ip)
+        Called for every event that becomes visible to the agent, so the slate
+        holds addresses seen anywhere in the stream rather than only the current
+        one. Slots are stable: an address keeps its index until evicted, so the
+        index the agent learns keeps its referent.
+
+        Eviction is least-recently-seen among addresses that are *not* under a
+        control. Blocked and throttled addresses are pinned, which is what keeps
+        an already-blocked host nameable for release even under ``"drop"``
+        visibility, where its events no longer arrive. If every slot is pinned,
+        a newly seen address simply does not enter the slate; it remains
+        reachable through target 0 while it is the current event.
+
+        Also records the last observed ``is_malicious`` per address, which
+        ``_compute_reward`` uses to grade an action aimed at a host other than
+        the one on screen.
+        """
+        if not self.target_slate_size:
+            return
+        ip = row.get("src_ip")
+        if not ip:
+            return
+        ip = str(ip)
+
+        self._slate_tick += 1
+        self._slate_seen[ip] = self._slate_tick
+        is_mal = row.get("is_malicious")
+        if is_mal is not None:
+            self._addr_label[ip] = bool(is_mal)
+
+        if ip in self._target_slate:
+            return
+        for i, slot in enumerate(self._target_slate):
+            if slot is None:
+                self._target_slate[i] = ip
+                return
+        evictable = [
+            (self._slate_seen.get(addr, 0), i)
+            for i, addr in enumerate(self._target_slate)
+            if addr is not None
+            and addr not in self._blocked_ips
+            and addr not in self._throttled_ips
+        ]
+        if not evictable:
+            return
+        self._target_slate[min(evictable)[1]] = ip
+
+    def _resolve_target(
+        self, action_dict: dict[str, Any], src_ip: str | None,
+    ) -> tuple[str | None, bool]:
+        """Resolve an action's target address.
+
+        Returns ``(address, explicit)``. Target 0 (and any action taken with
+        targeting disabled) resolves to the current event's source, which is the
+        legacy binding. A slate index resolves to whatever occupies that slot,
+        or ``None`` if the slot is empty.
+        """
+        if not self.target_slate_size:
+            return src_ip, False
+        idx = int(action_dict.get("target", TARGET_CURRENT_EVENT))
+        if idx == TARGET_CURRENT_EVENT:
+            return src_ip, False
+        slot = idx - 1
+        if 0 <= slot < len(self._target_slate):
+            return self._target_slate[slot], True
+        return None, True
+
+    def _render_target_slate(self) -> str:
+        """Render the addressable slate as a numbered list.
+
+        Index 0 is listed explicitly because it is the legacy binding and is
+        always available. Control marks let the agent distinguish a host it has
+        already acted on from one it has merely seen.
+        """
+        src = self._current_src_ip()
+        lines = ["=== targets ===", f"  0 current_src: {src if src else 'none'}"]
+        for i, addr in enumerate(self._target_slate, start=1):
+            if addr is None:
+                lines.append(f"  {i} -")
+                continue
+            marks = []
+            if addr in self._blocked_ips:
+                marks.append("BLOCKED")
+            if addr in self._throttled_ips:
+                marks.append("THROTTLED")
+            suffix = f" [{'+'.join(marks)}]" if marks else ""
+            lines.append(f"  {i} {addr}{suffix}")
+        text = "\n".join(lines)
+        return text[-self.max_chars:] if len(text) > self.max_chars else text
+
+    def _target_slate_matrix(self) -> np.ndarray:
+        """Encode the slate as ``(target_slate_size, TARGET_SLATE_COLS)`` float32.
+
+        Columns: ``[addr_hash, is_blocked, is_throttled]``. Empty slots are all
+        zero. The hash uses the same mmh3 seed as the structured eBPF channels'
+        IP encoding, so an address hashes identically in both places and the
+        agent can associate a slate slot with kernel telemetry.
+        """
+        from security_gym.envs.ebpf_encoding import SEED_IP, hash_string
+
+        mat = np.zeros((self.target_slate_size, TARGET_SLATE_COLS), dtype=np.float32)
+        for i, addr in enumerate(self._target_slate):
+            if addr is None:
+                continue
+            mat[i, 0] = hash_string(addr, seed=SEED_IP)
+            mat[i, 1] = 1.0 if addr in self._blocked_ips else 0.0
+            mat[i, 2] = 1.0 if addr in self._throttled_ips else 0.0
+        return mat
+
+    def _action_reward(self, action: int, ground_truth: dict[str, Any]) -> float:
+        """Action-term reward, graded against whatever the action acted on.
+
+        Two rules apply to the three address-taking actions.
+
+        An action that changed nothing scores 0.0. Paying a block in full when it
+        dropped no traffic decouples reward from effect, and on these streams that
+        is the common case rather than the corner case: 93.5% of `exp_30d_heavy_v4`
+        events carry no address, almost all of them eBPF file and process events
+        that have no peer address to record. Expect the action term to be zero on
+        most steps; that is the intended semantics, not an anomaly.
+
+        An action aimed at a slate address is graded on that address's last
+        observed label rather than on whatever event happens to be on screen,
+        which is what makes it coherent to block a host named from kernel
+        evidence while looking at an unrelated event. The grading is causal: it
+        uses only a label the agent has already been shown, and falls back to the
+        current event when the address has never been seen labeled.
+        """
+        targeted = action in (ACTION_THROTTLE, ACTION_BLOCK_SOURCE, ACTION_UNBLOCK)
+        if targeted:
+            if not self._target_effective:
+                return 0.0
+            if self._target_explicit and self._resolved_target is not None:
+                known = self._addr_label.get(self._resolved_target)
+                if known is not None:
+                    table = _ATTACK_REWARDS if known else _BENIGN_REWARDS
+                    return table.get(action, 0.0)
+        table = _ATTACK_REWARDS if ground_truth["is_malicious"] else _BENIGN_REWARDS
+        return table.get(action, 0.0)
+
+    def _apply_action(self, action_dict: dict[str, Any], src_ip: str | None) -> None:
+        """Apply the agent's action to update defense state.
+
+        With targeting enabled the acted-on address comes from ``_resolve_target``
+        rather than always being the current event's source. ``_target_effective``
+        records whether the action actually changed anything, which
+        ``_compute_reward`` uses to avoid paying for an action that did nothing.
+        """
+        action = int(action_dict["action"])
+        target, explicit = self._resolve_target(action_dict, src_ip)
+        self._resolved_target = target
+        self._target_explicit = explicit
+        self._target_effective = False
+
+        if action == ACTION_THROTTLE and target:
+            if target not in self._throttled_ips:
+                self._throttled_ips.add(target)
+                self._stamp_defense_change()
+            self._target_effective = True
+        elif action == ACTION_BLOCK_SOURCE and target:
+            if target not in self._blocked_ips:
+                self._blocked_ips.add(target)
+                self._stamp_defense_change()
             # Stamp (or restamp) the ban start time for block_ttl expiry. At
             # this point _prev_timestamp is the time of the event being acted
             # on, the correct fail2ban "ban start" anchor.
             if self._prev_timestamp is not None:
-                self._block_times[src_ip] = self._prev_timestamp
-        elif action == ACTION_UNBLOCK and src_ip:
-            self._blocked_ips.discard(src_ip)
-            self._throttled_ips.discard(src_ip)
-            self._block_times.pop(src_ip, None)
+                self._block_times[target] = self._prev_timestamp
+            self._target_effective = True
+        elif action == ACTION_UNBLOCK and target:
+            if target in self._blocked_ips or target in self._throttled_ips:
+                self._stamp_defense_change()
+                self._target_effective = True
+            self._blocked_ips.discard(target)
+            self._throttled_ips.discard(target)
+            self._block_times.pop(target, None)
         elif action == ACTION_ISOLATE:
+            if not self._is_isolated:
+                self._stamp_defense_change()
             self._is_isolated = True
+            self._target_effective = True
+
+    def _stamp_defense_change(self) -> None:
+        """Record the event-time at which the defense state last changed.
+
+        Anchored on ``_prev_timestamp`` (the time of the event being acted on),
+        the same anchor ``_apply_action`` uses for ``block_ttl`` ban starts.
+        """
+        if self._prev_timestamp is not None:
+            self._last_defense_change = self._prev_timestamp
+
+    def _seconds_under_current_state(self) -> float:
+        """Event-seconds elapsed since the defense state last changed.
+
+        Zero when the state has never changed, so a fresh episode and a
+        just-changed state read alike (both are "no elapsed time under these
+        controls"). Never negative.
+        """
+        if self._last_defense_change is None or self._prev_timestamp is None:
+            return 0.0
+        return max(0.0, (self._prev_timestamp - self._last_defense_change).total_seconds())
+
+    def _current_src_ip(self) -> str | None:
+        """Source IP of the event currently being observed, if any."""
+        if self._current_row is None:
+            return None
+        ip = self._current_row.get("src_ip")
+        return str(ip) if ip else None
+
+    def _render_defense_state(self) -> str:
+        """Render the defense state as operator-style status output.
+
+        Models what an operator would learn from `fail2ban-client status` and
+        `iptables -L`: what is currently blocked or throttled, whether the host
+        is isolated, and how much traffic those controls have suppressed. The
+        ``current_src`` line reports whether the source of the event now being
+        observed is already under a control, which is what makes de-escalation
+        (`unblock`) decidable from the observation rather than from agent memory.
+
+        Ground-truth-blind: every field is a consequence of the agent's own
+        actions. Address lists are sorted for determinism and truncated to
+        ``DEFENSE_STATE_MAX_LISTED`` entries.
+        """
+        def _fmt(label: str, ips: set[str]) -> str:
+            listed = sorted(ips)
+            shown = listed[:DEFENSE_STATE_MAX_LISTED]
+            more = len(listed) - len(shown)
+            body = ", ".join(shown) if shown else "none"
+            if more > 0:
+                body += f", +{more} more"
+            return f"{label} ({len(listed)}): {body}"
+
+        src = self._current_src_ip()
+        if src is None:
+            current = "current_src: none"
+        else:
+            marks = []
+            if src in self._blocked_ips:
+                marks.append("BLOCKED")
+            if src in self._throttled_ips:
+                marks.append("THROTTLED")
+            current = f"current_src: {src}" + (f" [{'+'.join(marks)}]" if marks else "")
+
+        lines = [
+            "=== defense state ===",
+            _fmt("blocked", self._blocked_ips),
+            _fmt("throttled", self._throttled_ips),
+            f"isolation: {'on' if self._is_isolated else 'off'}",
+            f"events_suppressed: {self._events_dropped}",
+            f"seconds_since_change: {self._seconds_under_current_state():.0f}",
+            current,
+        ]
+        text = "\n".join(lines)
+        return text[-self.max_chars:] if len(text) > self.max_chars else text
+
+    def _defense_state_vector(self) -> np.ndarray:
+        """Encode the defense state as a fixed-width float32 vector.
+
+        Columns: [n_blocked, n_throttled, is_isolated, current_src_blocked,
+        current_src_throttled, seconds_since_last_change]. Carries the same
+        facts as the text rendering minus the address list, which has no
+        fixed-width encoding; the two membership flags preserve the part that
+        bears on the current decision.
+        """
+        src = self._current_src_ip()
+        return np.array([
+            len(self._blocked_ips),
+            len(self._throttled_ips),
+            1.0 if self._is_isolated else 0.0,
+            1.0 if (src is not None and src in self._blocked_ips) else 0.0,
+            1.0 if (src is not None and src in self._throttled_ips) else 0.0,
+            self._seconds_under_current_state(),
+        ], dtype=np.float32)
 
     def _build_info(
         self,
@@ -468,6 +817,12 @@ class SecurityLogStreamEnv(gymnasium.Env):
             "blocked_ips": sorted(self._blocked_ips),
             "is_isolated": self._is_isolated,
             "events_dropped": self._events_dropped,
+            # What the last action actually bound to. Needed by an evaluation
+            # harness to tell a targeted block from a hit on an empty slot;
+            # without it, containment metrics cannot attribute an action.
+            "action_target": self._resolved_target,
+            "action_target_explicit": self._target_explicit,
+            "action_effective": self._target_effective,
         }
 
     def _parse_timestamp(self, row: dict[str, Any]) -> datetime:
@@ -502,6 +857,14 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self._ongoing_reward = 0.0
         self._block_times = {}
         self._current_denied = False
+        self._last_defense_change = None
+        self._target_slate = [None] * self.target_slate_size
+        self._slate_seen = {}
+        self._addr_label = {}
+        self._slate_tick = 0
+        self._resolved_target = None
+        self._target_explicit = False
+        self._target_effective = False
 
         # Seed throttle RNG
         self._throttle_rng = np.random.default_rng(seed)
@@ -520,9 +883,11 @@ class SecurityLogStreamEnv(gymnasium.Env):
         row = self._advance()
         if row is None:
             self._exhausted = True
+            self._current_row = None
             return self._empty_observation(), {"exhausted": True}
 
         self._current_row = row
+        self._observe_address(row)
         ts = self._parse_timestamp(row)
         self._prev_timestamp = ts
 
@@ -561,6 +926,7 @@ class SecurityLogStreamEnv(gymnasium.Env):
             return obs, reward, False, True, info
 
         self._current_row = row
+        self._observe_address(row)
         ts = self._parse_timestamp(row)
 
         # Compute dt

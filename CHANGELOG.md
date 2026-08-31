@@ -1,6 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+### Added a state space: the `defense_state` observation channel
+
+The observation reported the host's telemetry and nothing about the agent's own controls. `blocked_ips`, `throttled_ips`, `is_isolated`, and `events_dropped` were reachable only through the `info` dict, which also carries the ground-truth labels, so an agent had no observable record of what it had already done and reading it sat adjacent to the label channel. An operator in that position runs `fail2ban-client status` or `iptables -L`. The new channel reports blocked and throttled address lists, isolation, suppressed-event count, event-seconds since the state last changed, and whether the source of the current event is already under a control. Text mode renders command-style status output; hybrid mode encodes `Box(6)`. Every field is a consequence of the agent's own actions, so the channel leaks no ground truth. On by default (`defense_state_obs=True`); pass `False` for the previous observation space.
+
+### Added target selection: naming an address instead of acting on the current event
+
+Every stateful action bound to the current event's `src_ip`, so `block_source` meant "block the source of this event" and never "block address X". That forecloses most of the stream: 93.50% of `exp_30d_heavy_v4` events carry no source address, 99.9% of those are eBPF, and `ebpf_file` alone accounts for 94.6% of them. This is structural rather than a parsing gap, since an `openat` or `execve` has no peer address to record. An agent that inferred compromise from a suspicious `execve` therefore could not act on it, and a blocked host could never be released, because its events stop arriving and no later step could name it.
+
+The action gains a `target` component: 0 is the current event's source, and 1..N name a slot in the target slate, an observable list of addresses seen anywhere in the stream. Slots are stable so a learned index keeps its referent; eviction is least-recently-seen among addresses not under a control, and blocked or throttled addresses are pinned, which is what makes release reachable under the default `"drop"` visibility. The slate ships as its own observation channel, since an index into an unobservable list is not learnable, and the hybrid encoding hashes addresses with the same `SEED_IP` as the network channel's `dst_ip_hash` so a slate slot and a kernel event agree on a host. Default `target_slate_size=64`, sized from the corpus: 200 to 400 distinct addresses are live per 5,000-addressed-event window. Pass `0` for the previous action space.
+
+### Reward now reflects effect
+
+An address-taking action that changed no state scored the full action reward, so a block that dropped nothing was paid +1.0 on a malicious event or -1.0 on a benign one. On these streams that was the common case rather than the corner case. Such actions now score 0.0. Separately, an explicitly targeted action is graded on the target address's last observed label rather than on whatever event is on screen, which is what makes it coherent to block a host named from kernel evidence while looking at an unrelated event; the grading is causal, using only labels the agent has already been shown.
+
+### Fixed byte-reversed IPv4 addresses in the eBPF collector
+
+`_ip_str` packed a host-byte-order value as network byte order, reversing the octets on every `connect` event: the Log4Shell container at `172.18.0.3` was recorded as `3.0.18.172`. `bpf_probe_read_user` copies the raw network-order bytes of `sin_addr` into a `u32` and BCC decodes that field natively, so the value arrives already host-ordered and packing it `"!I"` swapped a second time. Now packs `"=I"`, correct on either host endianness. The destination port on the same line was always correct, since it uses the complementary pack-native/unpack-big-endian idiom. **This fix applies to future collections only; every published artifact still carries reversed addresses**, quantified per artifact in `data/provenance/EBPF_IP_BYTE_ORDER_20260828.md`. To make the helper testable off a collection host, the BCC `ImportError` now sets `BPF = None` and is reported by `main()` instead of exiting at import time; the daemon's behaviour is unchanged.
+
+### Fixed the `Text` observation charset
+
+Every text channel joins its ring buffer with `"\n"`, but the declared charset was printable ASCII only, so `observation_space.contains(obs)` was false for any multi-line channel and Gymnasium's passive checker warned on it. Newline is now in the charset.
+
+### Regenerated the baseline table
+
+The README baselines were generated while `include_risk_reward` still defaulted to `True` and were not regenerated when commit `a5ceae9` flipped that default off, so the mean-reward column described a reward function the environment no longer computed. The published pass-only figure of -0.073 is reproduced exactly (-0.0733) by adding the dormant risk-MSE term back to the current -0.0120. The table now reports the 0.6.0 defaults. Detection metrics were unaffected, since they never depended on the reward.
+
+### Note on the published contract
+
+`rlc2026-camera-ready` pins the repository state described by the RLC 2026 Continual RL Workshop camera-ready. That workshop is non-archival with no proceedings, so these contract changes supersede rather than invalidate a published artifact. Every changed default can be reconstructed with constructor arguments.
+
 
 ### Pinned the ruff rule set against upstream default drift
 

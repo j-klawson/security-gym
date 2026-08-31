@@ -52,7 +52,8 @@ def run_pass_only(db_path: str, max_steps: int | None, seed: int) -> dict:
     tn = fn = 0
     t0 = time.perf_counter()
     while True:
-        action = {"action": 0, "risk_score": np.array([0.0], dtype=np.float32)}
+        action = {"action": 0, "risk_score": np.array([0.0], dtype=np.float32),
+                  "target": 0}
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         steps += 1

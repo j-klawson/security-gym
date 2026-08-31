@@ -45,6 +45,7 @@ Dict({
     "network_events":   Text    # eBPF: connect/accept socket events
     "file_events":      Text    # eBPF: open/unlink file events
     "system_stats":     Box(3)  # [load_avg, mem_used_frac, disk_used_frac]
+    "defense_state":    Text    # Optional (defense_state_obs=True): own control state
 })
 ```
 
@@ -63,6 +64,7 @@ Dict({
     "network_events":   Box(50, 7)        # [log_dt, pid, uid, syscall, dst_ip_hash, dst_port, comm_hash]
     "file_events":      Box(50, 6)        # [log_dt, pid, uid, syscall, flags, path_hash]
     "system_stats":     Box(3)            # Unchanged
+    "defense_state":    Box(6)            # Optional (defense_state_obs=True)
 })
 ```
 
@@ -75,12 +77,42 @@ print(obs["auth_log"][:100])            # str — raw log text
 print(obs["process_events"].shape)      # (50, 8) — float32 array
 ```
 
+### Defense State (`defense_state_obs=True`, opt-in)
+
+Without this channel the environment reports only the host's telemetry, so an agent has no observable record of what it has already blocked, throttled, or isolated and must carry that state internally. An operator in the same position would run `fail2ban-client status` or `iptables -L`. Enabling `defense_state_obs` puts that answer in the observation.
+
+Text mode renders it as command-style status output:
+
+```
+=== defense state ===
+blocked (2): 10.0.0.5, 192.168.2.77
+throttled (1): 198.51.100.2
+isolation: off
+events_suppressed: 1423
+seconds_since_change: 84
+current_src: 192.168.2.77 [BLOCKED]
+```
+
+Hybrid mode encodes the same facts as `Box(6)`: `[n_blocked, n_throttled, is_isolated, current_src_blocked, current_src_throttled, seconds_since_last_change]`. The address list has no fixed-width encoding, so the two membership flags carry the part that bears on the current decision.
+
+The `current_src` field is what makes de-escalation decidable from the observation rather than from agent memory: it reports whether the source of the event now being observed is already under a control. Every field is a consequence of the agent's own actions, so the channel is ground-truth-blind and leaks no label.
+
+The channel is default-off, which leaves the legacy observation space byte-for-byte unchanged. Whether it becomes the published default is an open decision (see TODO.md).
+
+```python
+env = gym.make("SecurityLogStream-Text-v0", db_path="data/exp_7d_brute_v4.db",
+               defense_state_obs=True, block_visibility="deny_log")
+obs, info = env.reset()
+print(obs["defense_state"])
+```
+
 ## Action Space
 
 ```
 Dict({
     "action":     Discrete(6)   # 0=pass, 1=alert, 2=throttle, 3=block_source, 4=unblock, 5=isolate
     "risk_score": Box(0, 10)    # Agent's estimate of current threat level (auxiliary prediction)
+    "target":     Discrete(65)  # 0=current event's source, 1..64=target slate slot
 })
 ```
 
@@ -93,7 +125,29 @@ Dict({
 | `unblock` | Remove source IP from blocklist/throttle list |
 | `isolate` | Quarantine server (block all network events) |
 
-IP-targeted actions use the current event's source IP. The agent can escalate and de-escalate: throttle -> block -> unblock.
+The agent can escalate and de-escalate: throttle -> block -> unblock.
+
+### Target selection
+
+`target` names the address an action applies to. Index 0 is the current event's source, which was the only available binding before 0.6.0; indices 1 to `target_slate_size` name a slot in the target slate, an observable list of addresses seen anywhere in the stream.
+
+This exists because binding actions to the current event forecloses most of the stream. 93.5% of `exp_30d_heavy_v4` events carry no source address at all, and that is structural rather than a parsing gap: 99.9% of address-less events are eBPF, and an `openat` or `execve` has no peer address to record. Without target selection an agent that infers compromise from a suspicious `execve` cannot act on it, because the event it is looking at names no host. With it, the agent blocks the host it saw earlier in `auth_log`.
+
+The slate is its own observation channel, since an index into a list the agent cannot see is not learnable. Text mode renders it as a numbered list; hybrid mode encodes `Box(N, 3)` as `[addr_hash, is_blocked, is_throttled]`, hashing addresses with the same seed as the network channel's `dst_ip_hash` so a slate slot and a kernel event referring to one host hash alike.
+
+```
+=== targets ===
+  0 current_src: none
+  1 192.168.1.100 [BLOCKED]
+  2 10.0.0.5
+  3 -
+```
+
+Slots are stable, so a learned index keeps its referent. Eviction is least-recently-seen among addresses not under a control; blocked and throttled addresses are pinned, which is what keeps an already-blocked host nameable for release even under `"drop"` visibility, where its events stop arriving. If every slot is pinned, a newly seen address does not enter the slate and remains reachable through target 0 while it is the current event.
+
+Two reward rules follow from targeting. An action that changes no state scores 0.0, rather than being paid in full for a block that dropped nothing. An action aimed at a slate address is graded on that address's last observed label rather than on whatever event is on screen, which is what makes it coherent to block a host named from kernel evidence while looking at an unrelated event; the grading uses only labels the agent has already been shown.
+
+Set `target_slate_size=0` to restore the pre-0.6.0 action space.
 
 ### Block recovery (opt-in, default-off)
 
@@ -173,15 +227,19 @@ The `redis_lua_escape` module exploits a Debian-specific vulnerability where Red
 
 ## Baselines
 
-Baseline agents establish performance bounds for the environment. See `examples/` for runnable scripts. Results below are from `exp_30d_heavy_v4.db` (1M steps, all 5 attack types).
+Baseline agents establish performance bounds for the environment. See `examples/` for runnable scripts. Results below are from `exp_30d_heavy_v4.db` (1M steps, seed 42, all 5 attack types), regenerated for 0.6.0.
 
 | Agent | Description | Precision | Recall | F1 | Mean Reward |
 |-------|-------------|----------:|-------:|---:|------------:|
-| **pass-only** | Never acts — always passes | 0.000 | 0.000 | 0.000 | -0.073 |
-| **random** | Uniform random action + risk score | 0.003 | 0.665 | 0.005 | -3.985 |
-| **threshold(5)** | Block IP after 5 failed SSH auths in 5 min | 1.000 | 0.005 | 0.011 | -0.084 |
-| **keyword** | Multi-channel SIEM-style pattern matching | 0.987 | 0.013 | 0.025 | -0.073 |
+| **pass-only** | Never acts — always passes | 0.000 | 0.000 | 0.000 | -0.0120 |
+| **random** | Samples the full action space | 0.005 | 0.675 | 0.010 | -0.4061 |
+| **threshold(5)** | Block IP after 5 failed SSH auths in 5 min | 1.000 | 0.005 | 0.011 | +0.0001 |
+| **keyword** | Multi-channel SIEM-style pattern matching | 0.987 | 0.013 | 0.025 | -0.0115 |
 | **rlsecd** | 5-head MLP continual learner ([rlsecd](https://github.com/j-klawson/rlsecd)) | 0.979 | 0.979 | 0.979 | — |
+
+Reported under the 0.6.0 defaults: `include_risk_reward=False`, `target_slate_size=64`, `defense_state_obs=True`. The mean-reward column moved substantially from the pre-0.6.0 table for two independent reasons, and the detection columns barely moved at all, since they never depended on the reward.
+
+The larger reason predates this release. The previous table was generated while `include_risk_reward` still defaulted to `True`, and was not regenerated when commit `a5ceae9` flipped that default off. Its pass-only figure of -0.073 is reproduced exactly by adding the dormant risk-MSE term back (-0.0733 computed directly from the first 1M events), so that column had been describing a reward function the environment no longer computed. The smaller reason is this release: an action that changes no state now scores 0.0 instead of being paid in full, which matters because ~93.5% of steps carry no address for an action to bind to.
 
 Both heuristic agents achieve high precision but near-zero recall. The threshold agent only sees SSH brute force in auth\_log text. The keyword agent adds rules for Log4Shell, process ancestry, and file access across all channels, doubling F1 — but still catches only 1.3% of attacks because most malicious events are eBPF kernel telemetry (file opens, process exits, network accepts) that don't match static signatures. Only a learning agent can generalize across the full observation space.
 

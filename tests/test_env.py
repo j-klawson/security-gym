@@ -6,6 +6,7 @@ import gymnasium as gym
 
 from security_gym.envs.log_stream_env import (
     SecurityLogStreamEnv,
+    DEFAULT_TARGET_SLATE_SIZE,
     ACTION_PASS,
     ACTION_ALERT,
     ACTION_THROTTLE,
@@ -646,3 +647,363 @@ class TestBlockBackwardCompat:
         env.close()
 
 
+
+
+class TestDefenseStateObservation:
+    """The defense-state channel: the agent's own control state, made observable.
+
+    Default-off, so an unconfigured env keeps the legacy observation space.
+    """
+
+    def test_can_be_switched_off(self, tmp_db):
+        """The pre-targeting observation space, reconstructible for comparison.
+
+        On by default since 0.6.0; `rlc2026-camera-ready` pins the state the
+        workshop paper described, and this flag reproduces its observation space.
+        """
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=False)
+        obs, _ = env.reset()
+        assert "defense_state" not in obs
+        assert "defense_state" not in env.observation_space.spaces
+        obs, _, _, _, _ = env.step(_make_action())
+        assert "defense_state" not in obs
+        env.close()
+
+    def test_present_by_default(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db)
+        obs, _ = env.reset()
+        assert "defense_state" in obs
+        assert "defense_state" in env.observation_space.spaces
+        env.close()
+
+    def test_present_when_enabled(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        obs, _ = env.reset()
+        assert "defense_state" in env.observation_space.spaces
+        assert isinstance(obs["defense_state"], str)
+        assert "blocked (0): none" in obs["defense_state"]
+        assert "throttled (0): none" in obs["defense_state"]
+        assert "isolation: off" in obs["defense_state"]
+        env.close()
+
+    def test_block_is_reflected(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        obs, info = env.reset()
+        src = info["src_ip"]
+        assert src, "fixture's first event should carry a src_ip"
+        obs, _, _, _, _ = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert "blocked (1)" in obs["defense_state"]
+        assert src in obs["defense_state"]
+        env.close()
+
+    def test_throttle_and_isolate_are_reflected(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        env.reset()
+        obs, _, _, _, _ = env.step(_make_action(ACTION_THROTTLE))
+        assert "throttled (1)" in obs["defense_state"]
+        obs, _, _, _, _ = env.step(_make_action(ACTION_ISOLATE))
+        assert "isolation: on" in obs["defense_state"]
+        env.close()
+
+    def test_current_src_marked_when_under_control(self, tmp_db):
+        """Under deny_log a blocked IP's events resurface; the channel says so.
+
+        This is what makes de-escalation decidable from the observation: the
+        agent can see that the source it is looking at is already blocked,
+        rather than having to remember it.
+        """
+        env = SecurityLogStreamEnv(
+            db_path=tmp_db, defense_state_obs=True, block_visibility="deny_log",
+        )
+        obs, info = env.reset()
+        src = info["src_ip"]
+        obs, _, _, _, _ = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        # Walk forward until the blocked source resurfaces as a deny-log line
+        for _ in range(10):
+            if info.get("src_ip") == src and DENY_LOG_PREFIX in obs["auth_log"]:
+                break
+            obs, _, _, _, info = env.step(_make_action(ACTION_PASS))
+        assert f"current_src: {src} [BLOCKED]" in obs["defense_state"]
+        env.close()
+
+    def test_unblock_cannot_reach_a_dropped_block(self, tmp_db):
+        """Under default "drop" visibility a block is irreversible.
+
+        Every stateful action targets the current event's src_ip, and a blocked
+        IP's events are 100% invisible, so no subsequent step can ever name it.
+        The defense-state channel makes this visible rather than fixing it: the
+        blocklist stays at 1 however many unblocks the agent issues. Tracked in
+        TODO.md under "Action Space - Control Semantics"; if the target binding
+        changes, this test is expected to change with it.
+        """
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        env.reset()
+        obs, _, _, _, _ = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert "blocked (1)" in obs["defense_state"]
+        for _ in range(6):
+            obs, _, _, truncated, _ = env.step(_make_action(ACTION_UNBLOCK))
+            if truncated:
+                break
+            assert "blocked (1)" in obs["defense_state"]
+        env.close()
+
+    def test_unblock_clears_state_under_deny_log(self, tmp_db):
+        """deny_log resurfaces the blocked IP, so unblock becomes reachable."""
+        env = SecurityLogStreamEnv(
+            db_path=tmp_db, defense_state_obs=True, block_visibility="deny_log",
+        )
+        obs, info = env.reset()
+        src = info["src_ip"]
+        obs, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert "blocked (1)" in obs["defense_state"]
+        cleared = False
+        for _ in range(12):
+            action = (
+                ACTION_UNBLOCK if info.get("src_ip") == src else ACTION_PASS
+            )
+            obs, _, _, truncated, info = env.step(_make_action(action))
+            if "blocked (0): none" in obs["defense_state"]:
+                cleared = True
+                break
+            if truncated:
+                break
+        assert cleared, "blocked source never resurfaced for an unblock"
+        env.close()
+
+    def test_reset_clears_state(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        env.reset()
+        env.step(_make_action(ACTION_ISOLATE))
+        obs, _ = env.reset()
+        assert "isolation: off" in obs["defense_state"]
+        assert "blocked (0): none" in obs["defense_state"]
+        env.close()
+
+    def test_channel_leaks_no_ground_truth(self, tmp_db):
+        """The rendering is a pure function of agent-caused state."""
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        env.reset()
+        for _ in range(8):
+            obs, _, _, truncated, _ = env.step(_make_action(ACTION_BLOCK_SOURCE))
+            if truncated:
+                break
+            text = obs["defense_state"].lower()
+            for leak in ("malicious", "benign", "attack", "campaign", "risk"):
+                assert leak not in text
+        env.close()
+
+    def test_seconds_since_change_is_non_negative_and_advances(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, defense_state_obs=True)
+        env.reset()
+        env.step(_make_action(ACTION_BLOCK_SOURCE))
+        seen = []
+        for _ in range(4):
+            obs, _, _, truncated, _ = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                break
+            line = [ln for ln in obs["defense_state"].splitlines()
+                    if ln.startswith("seconds_since_change:")][0]
+            seen.append(float(line.split(":")[1]))
+        assert seen, "expected at least one post-block step"
+        assert all(v >= 0.0 for v in seen)
+        assert seen == sorted(seen), "elapsed time under a stable state is monotone"
+        env.close()
+
+
+def _slate_index(obs: dict) -> dict:
+    """Parse the rendered target slate into {address: target_index}.
+
+    Deliberately goes through the observation text rather than the env's
+    internals: this is the same parse an agent has to do, so a rendering the
+    agent could not use would fail here.
+    """
+    out = {}
+    for line in obs["target_slate"].splitlines():
+        parts = line.strip().split()
+        if len(parts) < 2 or not parts[0].isdigit():
+            continue
+        idx, addr = int(parts[0]), parts[1]
+        if addr == "-" or addr.startswith("current_src"):
+            continue
+        out[addr] = idx
+    return out
+
+
+class TestExplicitTargeting:
+    """Naming an address instead of acting on whatever event is on screen.
+
+    Disabled by default (`target_slate_size=0`), which leaves the action space
+    and the legacy current-event binding untouched.
+    """
+
+    def test_can_be_switched_off(self, tmp_db):
+        """`target_slate_size=0` reconstructs the pre-0.6.0 action space."""
+        env = SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=0)
+        obs, _ = env.reset()
+        assert "target" not in env.action_space.spaces
+        assert "target_slate" not in env.observation_space.spaces
+        assert "target_slate" not in obs
+        env.close()
+
+    def test_on_by_default(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db)
+        obs, _ = env.reset()
+        assert env.action_space["target"].n == DEFAULT_TARGET_SLATE_SIZE + 1
+        assert "target_slate" in obs
+        env.close()
+
+    def test_spaces_when_enabled(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=8)
+        obs, _ = env.reset()
+        assert env.action_space["target"].n == 9  # 8 slots + "current event"
+        assert isinstance(obs["target_slate"], str)
+        assert "=== targets ===" in obs["target_slate"]
+        env.close()
+
+    def test_rejects_negative_slate_size(self, tmp_db):
+        with pytest.raises(ValueError, match="target_slate_size"):
+            SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=-1)
+
+    def test_slate_accumulates_addresses_seen_across_the_stream(self, tmp_db_with_ebpf):
+        env = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf, target_slate_size=8)
+        obs, _ = env.reset()
+        for _ in range(12):
+            obs, _, _, truncated, _ = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                break
+        slate = _slate_index(obs)
+        assert "10.0.0.1" in slate
+        assert "192.168.1.50" in slate
+        assert slate["10.0.0.1"] != slate["192.168.1.50"]
+        env.close()
+
+    def test_block_address_named_from_kernel_evidence(self, tmp_db_with_ebpf):
+        """The capability targeting exists for.
+
+        The fixture runs auth_log events (which carry addresses) and then eBPF
+        process/file events (which do not). Standing on an eBPF event with no
+        src_ip, the agent blocks a host it saw earlier in auth_log by naming its
+        slate slot. Under the legacy binding this step is a silent no-op.
+        """
+        env = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf, target_slate_size=8)
+        obs, info = env.reset()
+
+        # Walk to an event that carries no source address
+        for _ in range(20):
+            obs, _, _, truncated, info = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                pytest.fail("stream exhausted before an address-less event")
+            if info.get("src_ip") is None and "192.168.1.50" in _slate_index(obs):
+                break
+        assert info["src_ip"] is None, "expected to be standing on an address-less event"
+
+        target = _slate_index(obs)["192.168.1.50"]
+        action = _make_action(ACTION_BLOCK_SOURCE)
+        action["target"] = target
+        obs, _, _, _, info = env.step(action)
+
+        assert "192.168.1.50" in info["blocked_ips"]
+        env.close()
+
+    def test_unblock_reachable_under_default_drop(self, tmp_db_with_ebpf):
+        """The defect targeting closes.
+
+        Blocked addresses stop producing events under "drop" visibility, so the
+        legacy binding can never name them again. Pinning them in the slate makes
+        release reachable without changing block_visibility.
+        """
+        env = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf, target_slate_size=8)
+        obs, info = env.reset()
+        first = info["src_ip"]
+        assert first
+
+        obs, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert first in info["blocked_ips"]
+
+        # The blocked host's events are now invisible, yet it stays nameable
+        released = False
+        for _ in range(20):
+            slate = _slate_index(obs)
+            assert first in slate, "blocked address was evicted from the slate"
+            action = _make_action(ACTION_UNBLOCK)
+            action["target"] = slate[first]
+            obs, _, _, truncated, info = env.step(action)
+            if first not in info["blocked_ips"]:
+                released = True
+                break
+            if truncated:
+                break
+        assert released, "blocked address was never releasable"
+        env.close()
+
+    def test_controlled_address_is_pinned_against_eviction(self, tmp_db_with_ebpf):
+        """A one-slot slate: the blocked address must survive later arrivals."""
+        env = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf, target_slate_size=1)
+        obs, info = env.reset()
+        first = info["src_ip"]
+        obs, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        for _ in range(12):
+            obs, _, _, truncated, info = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                break
+            assert first in _slate_index(obs), "pinned address was evicted"
+        env.close()
+
+    def test_action_on_empty_slot_scores_zero(self, tmp_db):
+        """Naming an empty slot changes nothing, so it earns nothing.
+
+        Under the legacy binding a block that changed no state is still paid in
+        full, which is the reward-effect decoupling recorded in TODO.md.
+        """
+        env = SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=8)
+        env.reset()
+        action = _make_action(ACTION_BLOCK_SOURCE)
+        action["target"] = 8  # last slot, still empty this early in the stream
+        obs, reward, _, _, info = env.step(action)
+        assert info["blocked_ips"] == []
+        assert reward == 0.0
+        env.close()
+
+    def test_targeted_action_graded_on_the_target_not_the_screen(self, tmp_db_with_ebpf):
+        """Blocking a known-malicious host scores +1.0 even on a benign event.
+
+        Grading on the current event would penalise exactly the cross-channel
+        correlation targeting is meant to enable.
+        """
+        env = SecurityLogStreamEnv(db_path=tmp_db_with_ebpf, target_slate_size=8)
+        obs, info = env.reset()
+        for _ in range(20):
+            obs, _, _, truncated, info = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                pytest.fail("stream exhausted before a benign address-less event")
+            gt = info["ground_truth"]
+            if (info.get("src_ip") is None and not gt["is_malicious"]
+                    and "192.168.1.50" in _slate_index(obs)):
+                break
+
+        action = _make_action(ACTION_BLOCK_SOURCE)
+        action["target"] = _slate_index(obs)["192.168.1.50"]
+        obs, reward, _, _, info = env.step(action)
+        assert "192.168.1.50" in info["blocked_ips"]
+        assert reward == pytest.approx(1.0), "graded against the benign event on screen"
+        env.close()
+
+    def test_target_zero_preserves_the_legacy_binding(self, tmp_db):
+        env = SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=8)
+        obs, info = env.reset()
+        first = info["src_ip"]
+        action = _make_action(ACTION_BLOCK_SOURCE)
+        action["target"] = 0
+        obs, _, _, _, info = env.step(action)
+        assert info["blocked_ips"] == [first]
+        env.close()
+
+    def test_enabling_targeting_leaves_other_channels_untouched(self, tmp_db):
+        plain = SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=0)
+        targeted = SecurityLogStreamEnv(db_path=tmp_db, target_slate_size=4)
+        obs_a, _ = plain.reset()
+        obs_b, _ = targeted.reset()
+        for ch in _CHANNELS:
+            assert obs_a[ch] == obs_b[ch]
+        plain.close()
+        targeted.close()

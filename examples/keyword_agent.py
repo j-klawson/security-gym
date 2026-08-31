@@ -121,6 +121,25 @@ def score_current_event(obs: dict[str, str], source: str) -> float:
     return total
 
 
+def blocked_from_observation(obs: dict) -> set[str]:
+    """Read the blocklist out of the environment's defense-state channel.
+
+    Since 0.6.0 the environment reports the agent's own controls, so an agent no
+    longer keeps a private mirror of them. Reading the real state cannot drift
+    from it, and it is what an operator would get from `fail2ban-client status`.
+    Falls back to an empty set when the channel is switched off.
+    """
+    for line in obs.get("defense_state", "").splitlines():
+        if line.startswith("blocked ("):
+            body = line.split(":", 1)[1].strip()
+            if body == "none":
+                return set()
+            return {
+                part.strip() for part in body.split(",")
+                if part.strip() and not part.strip().startswith("+")
+            }
+    return set()
+
 def run(
     db_path: str,
     alert_threshold: float = 2.0,
@@ -148,6 +167,7 @@ def run(
         threat_score = score_current_event(obs, source)
 
         # Decision
+        blocked_ips = blocked_from_observation(obs) or blocked_ips
         if threat_score >= block_threshold and src_ip:
             action_id = 3  # block_source
             blocked_ips.add(src_ip)
@@ -162,6 +182,11 @@ def run(
         action = {
             "action": action_id,
             "risk_score": np.array([risk], dtype=np.float32),
+            # Target 0 is the current event's source. This agent scores every
+            # channel but can still only act when the scored event carries an
+            # address, which is the limitation the target slate exists to lift:
+            # a threat scored on an eBPF file event has no src_ip to block.
+            "target": 0,
         }
 
         obs, reward, terminated, truncated, info = env.step(action)

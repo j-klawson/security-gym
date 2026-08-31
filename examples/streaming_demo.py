@@ -79,6 +79,7 @@ def demo_gym(db_path: str, max_steps: int = 20) -> None:
         action = {
             "action": 0,  # pass — monitor only
             "risk_score": np.array([0.0], dtype=np.float32),
+            "target": 0,  # the current event's source; unused while passing
         }
         obs, reward, terminated, truncated, info = env.step(action)
 

@@ -58,6 +58,25 @@ def extract_failures(auth_text: str) -> list[str]:
     return ips
 
 
+def blocked_from_observation(obs: dict) -> set[str]:
+    """Read the blocklist out of the environment's defense-state channel.
+
+    Since 0.6.0 the environment reports the agent's own controls, so an agent no
+    longer keeps a private mirror of them. Reading the real state cannot drift
+    from it, and it is what an operator would get from `fail2ban-client status`.
+    Falls back to an empty set when the channel is switched off.
+    """
+    for line in obs.get("defense_state", "").splitlines():
+        if line.startswith("blocked ("):
+            body = line.split(":", 1)[1].strip()
+            if body == "none":
+                return set()
+            return {
+                part.strip() for part in body.split(",")
+                if part.strip() and not part.strip().startswith("+")
+            }
+    return set()
+
 def run(
     db_path: str,
     threshold: int = 5,
@@ -73,7 +92,7 @@ def run(
     ip_failures: dict[str, collections.deque] = collections.defaultdict(
         lambda: collections.deque()
     )
-    blocked_ips: set[str] = set()
+    blocked_ips: set[str] = set()  # mirrors the env's blocklist, for reporting only
 
     total_reward = 0.0
     steps = 0
@@ -109,6 +128,9 @@ def run(
         action_id = 0  # default: pass
         risk = 0.0
 
+        # The environment reports what is already blocked, so the agent reads
+        # it rather than trusting its own record of what it asked for.
+        blocked_ips = blocked_from_observation(obs) or blocked_ips
         if src_ip and src_ip in blocked_ips:
             # Already blocked — pass (env handles the drop)
             action_id = 0
@@ -129,6 +151,10 @@ def run(
         action = {
             "action": action_id,
             "risk_score": np.array([risk], dtype=np.float32),
+            # This heuristic only ever acts on the host in front of it, which is
+            # exactly what target 0 means. Naming a slate slot would let it act
+            # on a host seen earlier; see examples in the README.
+            "target": 0,
         }
 
         obs, reward, terminated, truncated, info = env.step(action)

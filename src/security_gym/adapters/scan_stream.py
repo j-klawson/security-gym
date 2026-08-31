@@ -57,9 +57,16 @@ if HAS_JAX:
 class SecurityGymStream:
     """Stream adapter for raw text observations from EventStore.
 
-    Reads directly from EventStore, maintaining ring buffers per channel
-    (same as SecurityLogStreamEnv), and yields text observations with
-    ground truth metadata.
+    Reads directly from EventStore, maintaining ring buffers per channel, and
+    yields text observations with ground truth metadata.
+
+    Scope: this adapter emits the *telemetry* channels only, matching
+    ``SecurityLogStreamEnv`` constructed with ``defense_state_obs=False`` and
+    ``target_slate_size=0``. It deliberately does not emit the ``defense_state``
+    or ``target_slate`` channels the environment gained in 0.6.0. Those describe
+    the agent's own controls, and this adapter has no action loop and no defense
+    state, so there is nothing for them to report. Consumers that need them must
+    drive the environment rather than this adapter.
 
     Args:
         db_path: Path to SQLite event database.
@@ -95,7 +102,7 @@ class SecurityGymStream:
 
     @property
     def channels(self) -> list[str]:
-        """Observation channel names."""
+        """Observation channel names (telemetry only; see the class docstring)."""
         return list(_CHANNELS)
 
     def __len__(self) -> int:

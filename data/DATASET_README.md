@@ -19,7 +19,7 @@ All files are compressed with [Zstandard](https://facebook.github.io/zstd/). Dec
 
 ### Pre-Composed Experiment Streams
 
-Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poisson-scheduled attack insertion and 24.2% eBPF downsampling (simulates single busy server). Ready for direct use with `SecurityGymStream` or either observation mode (`SecurityLogStream-Text-v0`, `SecurityLogStream-Hybrid-v0`). eBPF events dominate volume (~93% of events are ebpf_file/process/network).
+Composed from `benign_v4.db` + `campaigns_v2.db` using StreamComposer with Poisson-scheduled attack insertion and 24.2% eBPF downsampling (chosen to approximate a single busy host's kernel event rate). Ready for direct use with `SecurityGymStream` or either observation mode (`SecurityLogStream-Text-v0`, `SecurityLogStream-Hybrid-v0`). eBPF events dominate volume: 97.51% of `exp_30d_heavy_v4` events are ebpf_file/process/network, with ebpf_file alone accounting for 90.77%. Only 2.49% of events come from log sources, and 93.50% of all events carry no source IP, since file and process syscall events have no peer address to record.
 
 | File | Compressed | Decompressed | Events | Malicious | Campaigns | Duration |
 |------|-----------|-------------|--------|-----------|-----------|----------|
@@ -68,7 +68,7 @@ Of the 60,468 events, 30,436 are labeled malicious and 30,032 are labeled benign
 - **Exploit outcomes are deterministic.** Credential attacks never succeed (0 of 76 brute-force attempts, 0 of 50 credential-stuffing attempts) because the credential lists are fabricated. Exploitation always succeeds (350 of 350 Log4Shell attempts, 4 of 4 Redis attempts, 6 of 6 post-auth logins, the last using valid credentials). The dataset therefore contains no partially successful or failed exploitation, and only 8 successful SSH authentications in total.
 - **Kill-chain phase progression is scripted.** Phases advance on a timer, not as a consequence of the preceding phase succeeding.
 - **Two campaign configs carry an incorrect ATT&CK tactic.** `full_killchain` and `redis_killchain` label the `recon` phase `TA0043` (Reconnaissance) in the `mitre_tactics` column, while `recon_only` and `recon_ssh_log4shell` label the identical T1046 SYN scan `TA0007` (Discovery). T1046 (Network Service Discovery) belongs to Discovery; the `TA0043` values are wrong. The `attack_type` and `attack_stage` columns used for training are unaffected.
-- **eBPF network events have two collector defects.** IPv4 addresses on `connect` events are byte-reversed (a `dst` of `3.0.18.172` is really `172.18.0.3`), and `accept` events carry no peer address at all, so all 619 malicious `ebpf_network` events have a NULL `src_ip` and were labeled by time window alone. Neither defect affects log-derived events or the `is_malicious` labels, but IP-level analysis of the `ebpf_network` channel is not supported by this data.
+- **eBPF network events have two collector defects.** IPv4 addresses on `connect` events are byte-reversed (a `dst` of `3.0.18.172` is really `172.18.0.3`), and `accept` events carry no peer address at all, so all 619 malicious `ebpf_network` events have a NULL `src_ip` and were labeled by time window alone. Neither defect affects log-derived events or the `is_malicious` labels, but IP-level analysis of the `ebpf_network` channel is not supported by this data. The byte-order defect was fixed in the collector on 2026-08-28, after this dataset was built; **every published artifact still carries it**, and reading those addresses correctly requires reversing the octets. See "Reading byte-reversed eBPF addresses" below.
 
 ## Event Sources
 
@@ -183,6 +183,27 @@ The `validate_labels.py` script runs 9 automated checks:
 - **campaigns_v2.db**: 24 temporal order violations (multi-server import boundary) and 3 mixed-label sessions (labeler edge cases at phase boundaries). These are in the source campaigns only — composed experiment streams are clean because StreamComposer re-sorts by timestamp.
 - **benign_v3.db / benign_v4.db**: Zero temporal order violations (build script sorts after multi-server merge).
 - **Check 2 limitation**: Raw line spot-checks cannot pattern-match eBPF kernel event lines (file opens, process exits). These events are correctly labeled by time+IP matching but fail the regex-based spot-check.
+
+### Reading byte-reversed eBPF addresses
+
+Every artifact in this release carries byte-reversed IPv4 addresses on `ebpf_network` `connect` events, in both the `raw_line` `dst=` field and the derived `src_ip` column. The collector packed a host-byte-order value as network byte order, reversing the octets; the destination port on the same line is correct, as are all addresses derived from log sources (`auth_log`, `web_access`, `web_error`). The defect was fixed in the collector on 2026-08-28, after this data was built, so it affects the published corpus and not future collections.
+
+To read an affected address, reverse the octets:
+
+```python
+def unreverse(ip: str) -> str:
+    return ".".join(reversed(ip.split(".")))
+
+unreverse("3.0.18.172")     # -> "172.18.0.3"   (the Log4Shell container)
+unreverse("113.2.168.192")  # -> "192.168.2.113"
+```
+
+Two consequences to be aware of when using the data as published:
+
+- Addresses that are palindromic under octet reversal (`0.0.0.0`, `8.8.8.8`) are unaffected and look correct, which is why the defect survives casual spot-checking.
+- The same host appears under two identities depending on channel: `192.168.2.113` in `auth_log`, `113.2.168.192` in `ebpf_network`. Any analysis that joins the log and kernel channels on IP, or that evaluates per-IP blocking in the Gymnasium environment, must normalize first.
+
+Per-artifact affected-event counts and the full root-cause analysis are in the repository at `data/provenance/EBPF_IP_BYTE_ORDER_20260828.md`.
 
 ## Data Provenance
 

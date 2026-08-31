@@ -75,6 +75,27 @@ The workshop is non-archival and publishes no proceedings, so the paper has no D
 
 The 365-day stream is the long-horizon stability target used in the companion paper. Fetch it from Zenodo when running long-horizon evaluations; the three streams hosted here cover the 30-day mixed-attack stream used for the main prediction results, the 90-day eBPF ablation stream, and the 7-day smoke test.
 
+## Known issue: byte-reversed eBPF addresses
+
+Every artifact in this release carries byte-reversed IPv4 addresses on `ebpf_network` `connect` events, in both the `raw_line` `dst=` field and the derived `src_ip` column. The collector packed a host-byte-order value as network byte order, reversing the octets. The destination port on the same line is correct, and all addresses derived from log sources (`auth_log`, `web_access`, `web_error`) are correct. The defect was fixed in the collector on 2026-08-28, after this data was built, so it affects the published corpus rather than future collections.
+
+To read an affected address, reverse the octets:
+
+```python
+def unreverse(ip: str) -> str:
+    return ".".join(reversed(ip.split(".")))
+
+unreverse("3.0.18.172")     # -> "172.18.0.3"   (the Log4Shell container)
+unreverse("113.2.168.192")  # -> "192.168.2.113"
+```
+
+Two consequences when using the data as published:
+
+- Addresses that are palindromic under octet reversal (`0.0.0.0`, `8.8.8.8`) are unaffected and look correct, which is why the defect survives casual spot-checking.
+- The same host appears under two identities depending on channel: `192.168.2.113` in `auth_log`, `113.2.168.192` in `ebpf_network`. Any analysis joining the log and kernel channels on IP, or evaluating per-IP blocking in the Gymnasium environment, must normalize first.
+
+A second, separate collector defect is not repairable by post-processing: `accept` events carry no peer address at all, so all 619 malicious `ebpf_network` events in `campaigns_v2.db` have a NULL `src_ip` and were labeled by time window alone. Neither defect affects log-derived events or the `is_malicious` labels. Root-cause analysis and per-artifact counts: [`data/provenance/EBPF_IP_BYTE_ORDER_20260828.md`](https://github.com/j-klawson/security-gym/blob/main/data/provenance/EBPF_IP_BYTE_ORDER_20260828.md).
+
 ## Quick start
 
 ```bash

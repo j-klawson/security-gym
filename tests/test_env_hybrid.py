@@ -6,6 +6,8 @@ import gymnasium as gym
 
 from security_gym.envs.log_stream_env import (
     SecurityLogStreamEnv,
+    DEFENSE_STATE_COLS,
+    TARGET_SLATE_COLS,
     ACTION_PASS,
     ACTION_BLOCK_SOURCE,
     ACTION_THROTTLE,
@@ -222,4 +224,163 @@ class TestBlockRecovery:
         assert trunc is True  # single IP blocked → stream exhausts
         assert info["events_dropped"] == 7
         assert DENY_LOG_PREFIX not in obs["auth_log"]
+        env.close()
+
+
+class TestHybridDefenseStateObservation:
+    """Structured counterpart to the text mode's defense-state rendering.
+
+    Columns: [n_blocked, n_throttled, is_isolated, current_src_blocked,
+    current_src_throttled, seconds_since_last_change].
+    """
+
+    def test_can_be_switched_off(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db), defense_state_obs=False)
+        obs, _ = env.reset()
+        assert "defense_state" not in obs
+        assert "defense_state" not in env.observation_space.spaces
+        env.close()
+
+    def test_present_by_default(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db))
+        obs, _ = env.reset()
+        assert "defense_state" in obs
+        assert obs["defense_state"].shape == (DEFENSE_STATE_COLS,)
+        env.close()
+
+    def test_shape_and_dtype(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db), defense_state_obs=True)
+        obs, _ = env.reset()
+        vec = obs["defense_state"]
+        assert vec.shape == (DEFENSE_STATE_COLS,)
+        assert vec.dtype == np.float32
+        assert env.observation_space["defense_state"].shape == (DEFENSE_STATE_COLS,)
+        np.testing.assert_array_equal(vec, np.zeros(DEFENSE_STATE_COLS, dtype=np.float32))
+        env.close()
+
+    def test_counts_track_defense_state(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db), defense_state_obs=True)
+        env.reset()
+        obs, _, _, _, _ = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert obs["defense_state"][0] == 1.0  # n_blocked
+        obs, _, _, _, _ = env.step(_make_action(ACTION_THROTTLE))
+        assert obs["defense_state"][1] == 1.0  # n_throttled
+        obs, _, _, _, _ = env.step(_make_action(ACTION_ISOLATE))
+        assert obs["defense_state"][2] == 1.0  # is_isolated
+        env.close()
+
+    def test_current_src_flag_under_deny_log(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(
+            db_path=str(tmp_db), defense_state_obs=True, block_visibility="deny_log",
+        )
+        obs, info = env.reset()
+        src = info["src_ip"]
+        obs, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        flagged = obs["defense_state"][3] == 1.0
+        for _ in range(10):
+            if flagged:
+                break
+            obs, _, _, truncated, info = env.step(_make_action(ACTION_PASS))
+            flagged = obs["defense_state"][3] == 1.0
+            if truncated:
+                break
+        assert flagged, f"current_src_blocked never set for {src}"
+        env.close()
+
+    def test_reset_clears_vector(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db), defense_state_obs=True)
+        env.reset()
+        env.step(_make_action(ACTION_ISOLATE))
+        obs, _ = env.reset()
+        np.testing.assert_array_equal(
+            obs["defense_state"], np.zeros(DEFENSE_STATE_COLS, dtype=np.float32),
+        )
+        env.close()
+
+
+class TestHybridExplicitTargeting:
+    """Structured counterpart to the text mode's target slate.
+
+    Hybrid duplicates `reset` and `step` rather than calling `super()`, so the
+    slate bookkeeping added to those methods needs coverage of its own.
+    """
+
+    def test_slate_shape_and_dtype(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db), target_slate_size=8)
+        obs, _ = env.reset()
+        slate = obs["target_slate"]
+        assert slate.shape == (8, TARGET_SLATE_COLS)
+        assert slate.dtype == np.float32
+        assert env.observation_space["target_slate"].shape == (8, TARGET_SLATE_COLS)
+        assert env.action_space["target"].n == 9
+        env.close()
+
+    def test_can_be_switched_off(self, tmp_db):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db), target_slate_size=0)
+        obs, _ = env.reset()
+        assert "target" not in env.action_space.spaces
+        assert "target_slate" not in obs
+        env.close()
+
+    def test_slate_populates_through_hybrid_reset_and_step(self, tmp_db_with_ebpf):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf), target_slate_size=8)
+        obs, info = env.reset()
+        assert obs["target_slate"][0, 0] != 0.0, "reset should seed the slate"
+        for _ in range(10):
+            obs, _, _, truncated, _ = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                break
+        occupied = int((obs["target_slate"][:, 0] != 0.0).sum())
+        assert occupied >= 2, "step should keep feeding the slate"
+        env.close()
+
+    def test_hash_agrees_with_the_network_channel(self, tmp_db_with_ebpf):
+        """A slate slot and a kernel event must hash one host identically.
+
+        This is what lets the agent associate an address in the slate with the
+        `dst_ip_hash` column of `network_events`. A different seed here would
+        make the association unlearnable.
+        """
+        from security_gym.envs.ebpf_encoding import SEED_IP, hash_string
+
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf), target_slate_size=8)
+        obs, info = env.reset()
+        first = info["src_ip"]
+        assert first
+        assert obs["target_slate"][0, 0] == pytest.approx(
+            float(hash_string(first, seed=SEED_IP)),
+        )
+        env.close()
+
+    def test_control_flags_track_defense_state(self, tmp_db_with_ebpf):
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf), target_slate_size=8)
+        obs, info = env.reset()
+        first = info["src_ip"]
+        obs, _, _, _, info = env.step(_make_action(ACTION_BLOCK_SOURCE))
+        assert first in info["blocked_ips"]
+        blocked_rows = obs["target_slate"][:, 1]
+        assert blocked_rows.sum() == 1.0, "exactly one slot should be marked blocked"
+        env.close()
+
+    def test_block_by_slate_index_from_an_address_less_event(self, tmp_db_with_ebpf):
+        """The cross-channel capability, exercised through the hybrid path."""
+        env = SecurityLogStreamHybridEnv(db_path=str(tmp_db_with_ebpf), target_slate_size=8)
+        obs, info = env.reset()
+        first = info["src_ip"]
+
+        for _ in range(20):
+            obs, _, _, truncated, info = env.step(_make_action(ACTION_PASS))
+            if truncated:
+                pytest.fail("stream exhausted before an address-less event")
+            if info.get("src_ip") is None:
+                break
+        assert info["src_ip"] is None
+
+        action = _make_action(ACTION_BLOCK_SOURCE)
+        action["target"] = 1  # slot 0 holds the first address seen
+        obs, _, _, _, info = env.step(action)
+        assert info["blocked_ips"] == [first]
+        assert info["action_target"] == first
+        assert info["action_target_explicit"] is True
+        assert info["action_effective"] is True
         env.close()

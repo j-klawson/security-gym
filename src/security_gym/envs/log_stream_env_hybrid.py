@@ -24,6 +24,10 @@ from security_gym.envs.ebpf_encoding import (
 )
 from security_gym.envs.log_stream_env import (
     BLOCK_VISIBILITY_DROP,
+    DEFAULT_DEFENSE_STATE_OBS,
+    DEFAULT_TARGET_SLATE_SIZE,
+    DEFENSE_STATE_COLS,
+    TARGET_SLATE_COLS,
     SecurityLogStreamEnv,
     _SOURCE_TO_CHANNEL,
 )
@@ -70,6 +74,14 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
             are surfaced as text.
         block_ttl: Optional fail2ban-style block auto-expiry in event-seconds.
             See base class.
+        defense_state_obs: Add a ``defense_state`` channel reporting the agent's
+            own control state (default-off). Hybrid mode encodes it as a
+            fixed-width ``Box(DEFENSE_STATE_COLS,)`` vector rather than the text
+            mode's status rendering, on the same principle as the eBPF channels:
+            [n_blocked, n_throttled, is_isolated, current_src_blocked,
+            current_src_throttled, seconds_since_last_change]. The address list
+            has no fixed-width encoding, so the two membership flags carry the
+            part that bears on the current decision.
     """
 
     def __init__(
@@ -83,6 +95,8 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         render_mode: str | None = None,
         block_visibility: str = BLOCK_VISIBILITY_DROP,
         block_ttl: float | None = None,
+        defense_state_obs: bool = DEFAULT_DEFENSE_STATE_OBS,
+        target_slate_size: int = DEFAULT_TARGET_SLATE_SIZE,
     ):
         self.tail_events = tail_events
 
@@ -95,14 +109,19 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
             render_mode=render_mode,
             block_visibility=block_visibility,
             block_ttl=block_ttl,
+            defense_state_obs=defense_state_obs,
+            target_slate_size=target_slate_size,
         )
 
         # Rebuild observation space with structured eBPF channels
-        _printable = "".join(chr(i) for i in range(32, 127))
+        # Printable ASCII plus newline: every text channel joins its ring buffer
+        # with "\n", so a charset without it makes observation_space.contains()
+        # false for any multi-line channel (the passive env checker warns on it).
+        _printable = "\n" + "".join(chr(i) for i in range(32, 127))
         text_space = spaces.Text(
             min_length=0, max_length=max_chars, charset=_printable,
         )
-        self.observation_space = spaces.Dict({
+        obs_spaces: dict[str, spaces.Space] = {
             "auth_log": text_space,
             "syslog": text_space,
             "web_log": text_space,
@@ -119,7 +138,23 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
                 shape=(tail_events, FILE_COLS), dtype=np.float32,
             ),
             "system_stats": spaces.Box(0, np.inf, shape=(3,), dtype=np.float32),
-        })
+        }
+        if self.defense_state_obs:
+            # Structured counterpart to the text mode's status rendering, on the
+            # same principle as the eBPF channels: kernel and control-plane state
+            # reach a SOC platform as structured data, logs reach it as text.
+            obs_spaces["defense_state"] = spaces.Box(
+                0, np.inf, shape=(DEFENSE_STATE_COLS,), dtype=np.float32,
+            )
+        if self.target_slate_size:
+            # [addr_hash, is_blocked, is_throttled] per slot. addr_hash uses the
+            # same mmh3 seed as the network channel's dst_ip_hash, so a slate
+            # slot and a kernel event referring to one host hash alike.
+            obs_spaces["target_slate"] = spaces.Box(
+                0, np.finfo(np.float32).max,
+                shape=(self.target_slate_size, TARGET_SLATE_COLS), dtype=np.float32,
+            )
+        self.observation_space = spaces.Dict(obs_spaces)
 
         # Process tree depth tracker
         self._pid_depth: dict[int, int] = {}
@@ -217,6 +252,11 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
 
         # System stats placeholder
         obs["system_stats"] = np.array([0.5, 0.3, 0.2], dtype=np.float32)
+
+        if self.defense_state_obs:
+            obs["defense_state"] = self._defense_state_vector()
+        if self.target_slate_size:
+            obs["target_slate"] = self._target_slate_matrix()
         return obs
 
     def _empty_observation(self) -> dict[str, Any]:
@@ -225,6 +265,10 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         for ch, n_cols in _STRUCTURED_CHANNELS.items():
             obs[ch] = np.zeros((self.tail_events, n_cols), dtype=np.float32)
         obs["system_stats"] = np.zeros(3, dtype=np.float32)
+        if self.defense_state_obs:
+            obs["defense_state"] = self._defense_state_vector()
+        if self.target_slate_size:
+            obs["target_slate"] = self._target_slate_matrix()
         return obs
 
     # ── Gymnasium interface overrides ───────────────────────────────────
@@ -250,6 +294,14 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         self._ongoing_reward = 0.0
         self._block_times = {}
         self._current_denied = False
+        self._last_defense_change = None
+        self._target_slate = [None] * self.target_slate_size
+        self._slate_seen = {}
+        self._addr_label = {}
+        self._slate_tick = 0
+        self._resolved_target = None
+        self._target_explicit = False
+        self._target_effective = False
 
         # Seed throttle RNG
         self._throttle_rng = np.random.default_rng(seed)
@@ -268,9 +320,11 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         row = self._advance()
         if row is None:
             self._exhausted = True
+            self._current_row = None
             return self._empty_observation(), {"exhausted": True}
 
         self._current_row = row
+        self._observe_address(row)
         ts = self._parse_timestamp(row)
         self._prev_timestamp = ts
 
@@ -309,6 +363,7 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
             return obs, reward, False, True, info
 
         self._current_row = row
+        self._observe_address(row)
         ts = self._parse_timestamp(row)
 
         # Compute dt
