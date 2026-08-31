@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/j-klawson/security-gym"
 url: "https://github.com/j-klawson/security-gym"
 license: Apache-2.0
-version: "0.5.1"
-date-released: "2026-06-07"
+version: "0.6.0"
+date-released: "2026-08-28"
 doi: "10.5281/zenodo.18810298"
 keywords:
   - gymnasium
