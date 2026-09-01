@@ -53,7 +53,20 @@ The `lint` job failed on all seven pushes from 2026-07-26 onward (188 errors) wh
 - [x] Bound the dev pin to `ruff>=0.16.1,<0.17`; upgrade the local venv (0.15.4 → 0.16.2) so local matches CI
 - [x] Verify clean under both 0.16.1 and 0.16.2
 - [ ] Decide whether to adopt the `I` and `UP` rule families (94 findings, all safe-autofixable; `UP017` `timezone.utc` → `datetime.UTC` accounts for 67). `BLE001` and `RUF059` are not recommended: they flag the intentional broad excepts in the attack modules and unused tuple unpacking in tests
-- [ ] Housekeeping unrelated to this fix: the working tree carries deletions of `data/build_benign_report.json` and the two `data/provenance/` C11 artifacts, plus an untracked `data.old/`. Decide whether the deletions are intended before they are swept into an unrelated commit
+- [x] Housekeeping unrelated to this fix: the working tree carried deletions of `data/build_benign_report.json` and the two `data/provenance/` C11 artifacts, plus an untracked `data.old/`. Resolved: the deletions were unintended artifacts of the `data/` → `data.old/` move. C11 provenance restored in commit 1dc3ab7; `build_benign_report.json` restored 2026-08-31; `data.old/` audited and deleted (see "V3 Deposit Stream-Archive Staleness" above)
+
+## V3 Deposit Stream-Archive Staleness (2026-08-31)
+
+Found during the pre-deletion audit of `data.old/`: the v3 dataset deposit (Zenodo 10.5281/zenodo.18901542) has the same defect class as the remediated v4 deposit, predating it and undocumented until now. Its four stream archives hold small morning-of-2026-03-04 compositions (decompressed 13,819,904 / 281,206,784 / 254,820,352 / 890,892,288 B for 7d/30d/90d/365d) while the final v3 stream databases were recomposed that afternoon (105,881,600 / 673,599,488 / 1,385,906,176 / 6,925,238,272 B). All six local archives MD5-match the Zenodo record; the two base archives are genuine (`benign_v3.db.zst` decompresses byte-identical to the local DB, MD5 `db08ea929f3488ed304bb9c930900a48`; `campaigns_v2.db.zst` is byte-identical to the verified copy in `data/`). Narrative in ROADMAP.md "Dataset Publication Defect — Stale v3 Stream Archives".
+
+- [x] Audit every file in `data.old/` against `data/`, git, and the Zenodo deposits before deletion (2026-08-31; all replicated items verified by hash, not by name or size)
+- [x] Move the sole surviving copies into `data/`: the four final v3 stream DBs (`exp_7d_brute.db`, `exp_30d_heavy.db`, `exp01_90d.db`, `exp_365d_realistic.db`), the never-published v1 `campaigns.db`, and the deprecated `exp01_90d.cache_h256.npz` feature cache; `data.old/` deleted afterwards
+- [x] Restore `data/build_benign_report.json` from git (deleted from the working tree by the directory move; byte-identical to the `data.old/` copy). This also closes the working-tree housekeeping item under "CI Lint Failure" below
+- [x] Confirm the local `exp_7d_brute.db` matches the MD5 recorded in `V4_ARCHIVE_STALENESS_20260726.md` (`3743327301d64f04bbbbe8fd96e392a8`), so the v3 streams are unchanged since the 2026-07-26 measurements
+- [ ] Write `data/provenance/V3_ARCHIVE_STALENESS_20260831.md` in the style of the v4 report; the evidence currently lives only in ROADMAP.md, TODO.md, and CLAUDE.md prose
+- [ ] Recompress the four final v3 streams to fresh `.zst` (roughly 500 MB total) so the final v3 corpus has a durable compressed form; the deposit cannot currently reproduce it
+- [ ] Decide the disposition of the v3 record: erratum note on 18901542, a corrected v3.1 version under the concept DOI, or documentation-only given supersession by v4.1. Fold into the downstream-consumer audit under "V4 Published-Archive Remediation", since any v3 downloader received the same class of truncated stream
+- [ ] Check whether any published surface (README, dataset card, papers) cites the v3 stream archives specifically, as opposed to the v3 base databases, and correct if so
 
 ## V4 Published-Archive Remediation (2026-07-26)
 

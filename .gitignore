@@ -18,6 +18,8 @@ env/
 *.sqlite3
 data/*.db
 data/*.sqlite
+data/*.zst
+data/*.npz
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
