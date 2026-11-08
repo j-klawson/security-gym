@@ -328,6 +328,20 @@ while True:
         break
 ```
 
+### Example Session Script
+
+`scripts/gym_usage_demo.py` runs the loop above and prints what the agent receives: the action space, the observation channels, one line per step (timestamp, action, ground truth, reward), and an episode summary.
+
+```bash
+python scripts/gym_usage_demo.py                              # data/exp_7d_brute_v4.db
+python scripts/gym_usage_demo.py path/to/stream.db --show-obs # also print the newest log line on each channel
+python scripts/gym_usage_demo.py <db> --show-obs --start-at 10816 --steps 12  # skip ahead before printing
+python scripts/gym_usage_demo.py --policy heuristic           # block the source on SSH failures
+python scripts/gym_usage_demo.py --synthetic                  # tiny generated stream, no dataset needed
+```
+
+Event id N is loop step N - 1, because `reset()` consumes event 1. The run stops after 2000 steps by default; pass `--max-steps 0` to run to the end of the data. The streams begin with benign traffic, so use `--start-at` to reach the first attack.
+
 ### Defensive Actions
 
 ```python
@@ -527,6 +541,7 @@ security-gym/
 │   ├── parsers/               # auth_log, syslog, web_access, web_error, journal, ebpf
 │   └── targets/               # Deprecated (v0 multi-head target builder)
 ├── examples/                  # Baseline agents and usage demos
+├── scripts/                   # Data build, eBPF collection, label validation, gym_usage_demo.py
 ├── attacks/                   # Attack framework (NOT pip-installed)
 │   ├── modules/               # recon, ssh_brute_force, credential_stuffing, ssh_post_auth, log4shell, redis_lua_escape
 │   ├── collection/            # SSH/SFTP log collector, benign log importer, eBPF orchestrator
