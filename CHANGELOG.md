@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added a specification set
+
+`specs/` replaces the draft `spec.md` with three documents in a stripped-down RFC style: `SPEC-ENV.md` (environment contract), `SPEC-CORPUS.md` (corpus construction, including the capture architecture for the planned re-collection), and `SPEC-BENCH.md` (control benchmark). Normative statements use BCP 14 keywords and stable requirement identifiers with conformance notes. Design decisions, with their context, options, and status, are recorded one per file in `specs/decisions/`.
+
+### Known defects confirmed (not yet fixed)
+
+- Reward alignment: `step()` grades the action and risk terms against the next visible event rather than the event acted on, and a targeted action can be graded on a label the agent has not yet observed (ENV-R-150, ENV-R-151, ENV-R-152).
+- Repeated controls: re-applying `throttle` or `block_source` to an already-controlled address counts as effective and is paid in full (ENV-R-130).
+- Label proxy in the default observation: the `current_src` lines of the default-on `target_slate` and `defense_state` text channels render the current event's address, which on v4.1 kernel file and process events exists only for attack events (ENV-R-060).
+
+The first two affect every reward-based number produced by 0.6.x, including the README baselines' mean-reward column. They are pinned by strict expected-failure tests in `tests/test_reward_alignment.py`, which turn into failures once fixed.
+
+### Documentation
+
+Docstrings, README, CLAUDE.md, and ROADMAP.md now state that `defense_state_obs` and target selection are on by default (they have been since 0.6.0).
+
 ## 0.6.0
 
 ### Added a state space: the `defense_state` observation channel

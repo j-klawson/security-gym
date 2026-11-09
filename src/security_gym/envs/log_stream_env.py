@@ -44,7 +44,7 @@ DENY_LOG_PREFIX = "[FIREWALL DENY] "
 DEFENSE_STATE_COLS = 6
 DEFENSE_STATE_MAX_LISTED = 20  # addresses enumerated in the text rendering
 
-# Explicit action targeting (opt-in via target_slate_size > 0).
+# Explicit action targeting (on by default since 0.6.0; target_slate_size=0 disables it).
 #
 # Without it every stateful action binds to the current event's src_ip, so the
 # agent can only act on the host the stream happens to be showing it. That makes
@@ -137,13 +137,15 @@ class SecurityLogStreamEnv(gymnasium.Env):
     takes defensive actions that causally affect future observations.
 
     Observation: Dict of Text channels (tail of recent events) + Box system stats,
-    plus an optional ``defense_state`` Text channel (``defense_state_obs=True``)
+    plus a ``defense_state`` Text channel (``defense_state_obs``, default True)
     reporting the agent's own control state: blocked and throttled sources,
     isolation, suppressed-event count, event-seconds since the state last
     changed, and whether the source of the current event is already under a
-    control. Default-off, so the legacy observation space is unchanged. The
-    channel is ground-truth-blind; every field is a consequence of the agent's
-    own actions. Without it the agent has no observable record of what it has
+    control. On by default since 0.6.0; ``defense_state_obs=False`` restores
+    the pre-0.6.0 observation space. Every field except ``current_src`` is a
+    consequence of the agent's own actions; ``current_src`` renders the current
+    event's address, which on legacy kernel events is a label proxy
+    (specs/SPEC-ENV.md ENV-R-060). Without it the agent has no observable record of what it has
     already done and must carry that state internally.
     Action: Dict of Discrete(6) action + Box(1) risk score.
     Reward: Asymmetric action costs + risk score MSE + ongoing consequence feedback.
@@ -213,12 +215,12 @@ class SecurityLogStreamEnv(gymnasium.Env):
         self.block_visibility = block_visibility
         self.block_ttl = float(block_ttl) if block_ttl is not None else None
 
-        # Defense-state observability (opt-in; default preserves the legacy
-        # observation space exactly, so existing agents and results are unaffected)
+        # Defense-state observability (on by default since 0.6.0; False restores
+        # the pre-0.6.0 observation space)
         self.defense_state_obs = bool(defense_state_obs)
 
-        # Explicit action targeting (opt-in; 0 keeps the implicit current-event
-        # binding and leaves the action space unchanged)
+        # Explicit action targeting (default 64 slots since 0.6.0; 0 keeps the
+        # implicit current-event binding and the pre-0.6.0 action space)
         if target_slate_size < 0:
             raise ValueError(f"target_slate_size must be >= 0, got {target_slate_size}")
         self.target_slate_size = int(target_slate_size)

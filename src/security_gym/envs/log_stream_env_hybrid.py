@@ -75,7 +75,7 @@ class SecurityLogStreamHybridEnv(SecurityLogStreamEnv):
         block_ttl: Optional fail2ban-style block auto-expiry in event-seconds.
             See base class.
         defense_state_obs: Add a ``defense_state`` channel reporting the agent's
-            own control state (default-off). Hybrid mode encodes it as a
+            own control state (default True since 0.6.0). Hybrid mode encodes it as a
             fixed-width ``Box(DEFENSE_STATE_COLS,)`` vector rather than the text
             mode's status rendering, on the same principle as the eBPF channels:
             [n_blocked, n_throttled, is_isolated, current_src_blocked,

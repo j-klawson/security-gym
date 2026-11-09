@@ -19,6 +19,10 @@ Built for the [Alberta Plan](https://arxiv.org/abs/2208.11173) vision of long-li
 
 **Dataset access** — The v4 dataset is mirrored on HuggingFace ([`j-klawson/security-gym-v4`](https://huggingface.co/datasets/j-klawson/security-gym-v4), 2.8 GB compressed, 7d/30d/90d streams) and on Zenodo ([10.5281/zenodo.18901541](https://doi.org/10.5281/zenodo.18901541), 11.3 GB compressed, full release including the 365-day stream). MLCommons Croissant 1.0 metadata with Responsible AI fields ships at `data/croissant.json`.
 
+## Specification
+
+The environment contract, corpus construction, and control benchmark are specified in [`specs/`](specs/README.md) (`SPEC-ENV.md`, `SPEC-CORPUS.md`, `SPEC-BENCH.md`), with design decisions and their status in [`specs/decisions/`](specs/decisions/README.md). Requirements carry stable identifiers (for example `ENV-R-150`) and conformance notes stating where the current code does not yet meet them.
+
 ## Features
 
 - **Raw text observations (v1)** — 6 text channels (auth\_log, syslog, web\_log, process\_events, network\_events, file\_events) + numeric system stats. The agent learns its own representations.
@@ -77,7 +81,7 @@ print(obs["auth_log"][:100])            # str — raw log text
 print(obs["process_events"].shape)      # (50, 8) — float32 array
 ```
 
-### Defense State (`defense_state_obs=True`, opt-in)
+### Defense State (`defense_state_obs`, on by default)
 
 Without this channel the environment reports only the host's telemetry, so an agent has no observable record of what it has already blocked, throttled, or isolated and must carry that state internally. An operator in the same position would run `fail2ban-client status` or `iptables -L`. Enabling `defense_state_obs` puts that answer in the observation.
 
@@ -97,7 +101,7 @@ Hybrid mode encodes the same facts as `Box(6)`: `[n_blocked, n_throttled, is_iso
 
 The `current_src` field is what makes de-escalation decidable from the observation rather than from agent memory: it reports whether the source of the event now being observed is already under a control. Every field is a consequence of the agent's own actions, so the channel is ground-truth-blind and leaks no label.
 
-The channel is default-off, which leaves the legacy observation space byte-for-byte unchanged. Whether it becomes the published default is an open decision (see TODO.md).
+The channel is on by default since 0.6.0; `defense_state_obs=False` restores the pre-0.6.0 observation space. Known issue: the `current_src` line renders the current event's source address, and on the v4.1 streams kernel file and process events carry an address only when they belong to an attack, so in text mode that line acts as a label on those events (`specs/SPEC-ENV.md` ENV-R-060). The `target_slate` channel's `current_src` line has the same issue; the hybrid encodings do not render the address.
 
 ```python
 env = gym.make("SecurityLogStream-Text-v0", db_path="data/exp_7d_brute_v4.db",
@@ -179,6 +183,8 @@ Two components by default (an action term and ongoing consequences), plus an opt
 
 **Ongoing consequences**: blocked/throttled events accumulate reward between steps (+0.1 per blocked attack event, -0.5 per blocked benign event). The agent feels the sustained cost of false positives.
 
+**Known reward defects (found 2026-11-08, not yet fixed).** Two defects affect every reward computed by 0.6.x. First, `step()` grades the action and risk terms against the next visible event rather than the event the action was chosen for; under the default `"drop"` visibility, blocking an attacker removes its later events, so the block is often graded against an unrelated benign event (on `exp_30d_heavy_v4`, a first-sight block of an attacker is graded benign in 13,643 of 29,583 attacker runs). Second, re-applying `throttle` or `block_source` to an address already under that control is paid in full, so naming a blocked attacker's slate slot earns +1.0 on every step. Both are specified in `specs/SPEC-ENV.md` (ENV-R-130, ENV-R-150) and pinned by expected-failure tests in `tests/test_reward_alignment.py`. The consequence term is unaffected.
+
 Under `block_visibility="deny_log"`, a surfaced deny-log entry contributes *only* the consequence term: the per-step action and risk terms are zeroed so the event is not double-counted (the firewall, not the agent's live decision, is acting on it). The agent's action on a denied event is graded on the next live event it produces. Episode-total consequence reward is unchanged from `"drop"` mode; `"deny_log"` only redistributes it across steps (one step per blocked event) and lengthens the episode.
 
 ## Supported Attacks
@@ -237,7 +243,7 @@ Baseline agents establish performance bounds for the environment. See `examples/
 | **keyword** | Multi-channel SIEM-style pattern matching | 0.987 | 0.013 | 0.025 | -0.0115 |
 | **rlsecd** | 5-head MLP continual learner ([rlsecd](https://github.com/j-klawson/rlsecd)) | 0.979 | 0.979 | 0.979 | — |
 
-Reported under the 0.6.0 defaults: `include_risk_reward=False`, `target_slate_size=64`, `defense_state_obs=True`. The mean-reward column moved substantially from the pre-0.6.0 table for two independent reasons, and the detection columns barely moved at all, since they never depended on the reward.
+Reported under the 0.6.0 defaults: `include_risk_reward=False`, `target_slate_size=64`, `defense_state_obs=True`. The mean-reward column carries the two reward defects described under [Reward Function](#reward-function) and will be regenerated once they are fixed; the detection columns do not depend on the reward. The mean-reward column moved substantially from the pre-0.6.0 table for two independent reasons, and the detection columns barely moved at all, since they never depended on the reward.
 
 The larger reason predates this release. The previous table was generated while `include_risk_reward` still defaulted to `True`, and was not regenerated when commit `a5ceae9` flipped that default off. Its pass-only figure of -0.073 is reproduced exactly by adding the dormant risk-MSE term back (-0.0733 computed directly from the first 1M events), so that column had been describing a reward function the environment no longer computed. The smaller reason is this release: an action that changes no state now scores 0.0 instead of being paid in full, which matters because ~93.5% of steps carry no address for an action to bind to.
 
